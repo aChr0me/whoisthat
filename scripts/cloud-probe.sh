@@ -17,6 +17,7 @@ set -u -o pipefail
 HOST="${PROBE_HOST:-open.marvelhub.art}"
 PORT="${PROBE_PORT:-443}"
 CAP=0
+NERR=1; NETNS=0; TUNCAP=0
 say() { printf '%s\n' "$*"; }
 verdict() { say "VERDICT: $*"; exit "$1"; }
 SUDO=""
@@ -58,10 +59,15 @@ fi
 step "netns + dummy link (unprivileged user namespace)"
 NSOPTS=""
 [ -z "$SUDO" ] && NSOPTS="-r -n"
-if unshare $NSOPTS -- sh -c 'ip link add wtprobe0 type dummy && ip link show wtprobe0 >/dev/null' 2>/dev/null; then
+if ! command -v ip >/dev/null 2>&1; then
+  say "SKIP — no iproute2 (netns and TUN both impossible)"
+  NETNS=0
+elif unshare $NSOPTS -- sh -c 'ip link add wtprobe0 type dummy && ip link show wtprobe0 >/dev/null' 2>/dev/null; then
   say "PASS unshare $NSOPTS + link add"
+  NETNS=1
 else
   say "FAIL unshare $NSOPTS + link add"
+  NETNS=0
 fi
 
 step "nftables in a netns"
@@ -74,15 +80,18 @@ else
 fi
 
 step "host TUN device, short-lived"
-if [ -c /dev/net/tun ] && [ -n "$SUDO" ]; then
+if [ -c /dev/net/tun ] && [ -n "$SUDO" ] && command -v ip >/dev/null 2>&1; then
   if $SUDO ip tuntap add dev wtprobe1 mode tun 2>/dev/null; then
     say "PASS ip tuntap add (host ns)"
+    TUNCAP=1
     $SUDO ip link del wtprobe1 2>/dev/null
   else
     say "FAIL ip tuntap add"
+    TUNCAP=0
   fi
 else
-  say "SKIP (needs /dev/net/tun and sudo)"
+  say "SKIP (needs /dev/net/tun, iproute2 and sudo)"
+  TUNCAP=0
 fi
 
 step "DNS + egress through the network path"
@@ -118,16 +127,13 @@ fi
 
 step "summary"
 say "nft in netns:         $( [ "${NERR:-1}" -eq 0 ] && echo yes || echo no )"
-say "netns usable:         $( [ "${NERR:-1}" -eq 0 ] && echo yes || echo no )"
-case "$( [ -c /dev/net/tun ] && [ -n "$SUDO" ] && echo tun-hostonly || echo no )" in
-  tun-hostonly) say "host TUN creatable:   yes" ;;
-  *) say "host TUN creatable:   no or unproven" ;;
-esac
+say "netns usable:         $( [ "${NETNS:-0}" -eq 1 ] && echo yes || echo no )"
+say "host TUN creatable:   $( [ "${TUNCAP:-0}" -eq 1 ] && echo yes || echo no )"
 
-if [ -c /dev/net/tun ] && [ -n "$SUDO" ] && [ "${NERR:-1}" -eq 0 ]; then
-  verdict 20 "TUN + nftables available: T1 loopback E2E may run here (still verify REALITY through the proxy with the xray block above)."
-elif [ "${NERR:-1}" -eq 0 ]; then
-  verdict 10 "netns + nftables only: T0 hermetic suites and ruleset tests run here; TUN bring-up needs a host with /dev/net/tun and non-interactive sudo."
+if [ "${TUNCAP:-0}" -eq 1 ] && [ "${NETNS:-0}" -eq 1 ] && [ "${NERR:-1}" -eq 0 ]; then
+  verdict 20 "TUN + netns + nftables: T1 E2E may run here (still prove REALITY first, the egress may be proxied)."
+elif [ "${NETNS:-0}" -eq 1 ] && [ "${NERR:-1}" -eq 0 ]; then
+  verdict 10 "netns + nftables only: T0 queue and ruleset tests run; TUN bring-up needs /dev/net/tun, iproute2 and non-interactive sudo."
 else
   verdict 0 "hermetic tier only: builds, unit tests and fixture parsing."
 fi
