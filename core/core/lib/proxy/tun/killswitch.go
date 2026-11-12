@@ -254,6 +254,8 @@ func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []st
 	for _, ip := range killSwitchV6 {
 		fmt.Fprintf(&b, "add rule inet whoisthat_ks output ip6 daddr %s accept\n", ip)
 	}
+	// DHCP client broadcast (K-1): sent before the host has an address.
+	b.WriteString("add rule inet whoisthat_ks output ip daddr 255.255.255.255 udp dport 67 accept\n")
 
 	// Resolution must keep working while the tunnel is being (re)established.
 	for _, ip := range append(append([]string{}, dns4...), killSwitchDNSSink4) {
@@ -306,6 +308,8 @@ func buildKillSwitchIptablesScript(proxyIPs []string, tunName string, dnsServers
 	for _, ip := range killSwitchV4 {
 		fmt.Fprintf(&b, "iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
 	}
+	// DHCP client broadcast (K-1): sent before the host has an address.
+	b.WriteString("iptables -A WHOISTHAT_KS -d 255.255.255.255 -p udp --dport 67 -j ACCEPT\n")
 	for _, ip := range append(append([]string{}, dns4...), killSwitchDNSSink4) {
 		fmt.Fprintf(&b, "iptables -A WHOISTHAT_KS -d %s -j ACCEPT\n", ip)
 	}

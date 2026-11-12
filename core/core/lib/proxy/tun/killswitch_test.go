@@ -392,3 +392,51 @@ func TestKillSwitchIptablesTeardownRemovesDuplicateJumps(t *testing.T) {
 		}
 	}
 }
+
+// K-1: a DHCP client broadcasts DISCOVER/REQUEST to 255.255.255.255:67 before
+// it has any address, so none of the LAN ranges above match. With the switch
+// armed a lease renewal would be dropped and the host strands itself offline.
+func TestKillSwitchAllowsDHCPBroadcast(t *testing.T) {
+	nft := buildKillSwitchNftScript(nil, "", nil)
+	if !strings.Contains(nft, "ip daddr 255.255.255.255 udp dport 67 accept") {
+		t.Errorf("nft script must accept udp 255.255.255.255:67 before the drop:\n%s", nft)
+	}
+	ipt := buildKillSwitchIptablesScript(nil, "", nil)
+	if !strings.Contains(ipt, "iptables -A WHOISTHAT_KS -d 255.255.255.255 -p udp --dport 67 -j ACCEPT") {
+		t.Errorf("iptables script must accept udp 255.255.255.255:67 before the drop:\n%s", ipt)
+	}
+	// The allow must not be v6 and must sit before the final drop.
+	if strings.Index(nft, "255.255.255.255") > strings.LastIndex(nft, "output drop") {
+		t.Errorf("DHCP allow must precede the drop rule")
+	}
+}
+
+// Applies the nft ruleset in a throwaway netns and checks the kernel kept the
+// DHCP rule ahead of the drop, i.e. the packet would traverse before dropping.
+func TestKillSwitchDHCPRuleOrderedBeforeDropInNetns(t *testing.T) {
+	if _, err := exec.LookPath("unshare"); err != nil {
+		t.Skip("unshare not available")
+	}
+	if _, err := exec.LookPath("nft"); err != nil {
+		t.Skip("nft not available")
+	}
+	if err := exec.Command("unshare", "-rn", "true").Run(); err != nil {
+		t.Skipf("user+net namespaces not available: %v", err)
+	}
+	body := buildKillSwitchNftScript(nil, "", nil) + "nft list chain inet whoisthat_ks output\n"
+	cmd := exec.Command("unshare", "-rn", "sh", "-s")
+	cmd.Stdin = strings.NewReader(body)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("apply failed: %v\n%s", err, out)
+	}
+	s := string(out)
+	dhcp := strings.Index(s, "255.255.255.255")
+	drop := strings.LastIndex(s, "drop")
+	if dhcp < 0 || !strings.Contains(s, "udp dport 67 accept") {
+		t.Fatalf("live ruleset has no DHCP accept:\n%s", s)
+	}
+	if dhcp > drop {
+		t.Fatalf("DHCP accept is after the drop:\n%s", s)
+	}
+}
