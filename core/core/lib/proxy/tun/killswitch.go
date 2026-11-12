@@ -1,6 +1,7 @@
 package tunmode
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -96,7 +97,7 @@ func RemoveKillSwitchBlock() error {
 	nftErr := removeNftKillSwitch()
 	iptErr := removeIptablesKillSwitch()
 
-	armed, probeErr := KillSwitchArmed()
+	armed, probeErr := killSwitchInstalled()
 	if probeErr != nil {
 		return fmt.Errorf("cannot verify kill-switch removal: %w", probeErr)
 	}
@@ -133,19 +134,29 @@ done
 `
 }
 
-// KillSwitchArmed reports whether the block is actually present. It checks
-// both nftables and the legacy iptables chains: a mixed or partially migrated
-// host must not be reported as disarmed.
+// KillSwitchArmed reports whether the block is actually enforcing: for nftables
+// the live ruleset must have the output chain with policy drop and at least one
+// IPv4 and one IPv6 rule (K-3). A table that merely exists, an empty chain or a
+// v4-only half install is NOT armed. The legacy iptables chains count as armed
+// when the jump is present. A mixed host must not be reported as disarmed.
 //
 // A missing binary means that backend is not in use (not an error). An
-// inspection that fails for another reason (permissions, broken binary) is
-// returned as an error: callers must not treat it as "not armed".
-func KillSwitchArmed() (bool, error) {
-	nftArmed, nftErr := nftKillSwitchArmed()
+// inspection that fails for another reason (permissions, broken binary,
+// unparseable output) is returned as an error: callers must not treat it as
+// "not armed".
+func KillSwitchArmed() (bool, error) { return killSwitchProbeAll(false) }
+
+// killSwitchInstalled reports whether ANY kill-switch state is present, even a
+// half-built one that would still drop traffic. Used to verify removal.
+func killSwitchInstalled() (bool, error) { return killSwitchProbeAll(true) }
+
+func killSwitchProbeAll(anyPresence bool) (bool, error) {
+	nftState, nftErr := nftKillSwitchState()
 	v4Armed, v4Err := iptablesKillSwitchArmed("iptables")
 	v6Armed, v6Err := iptablesKillSwitchArmed("ip6tables")
 
-	if nftArmed || v4Armed || v6Armed {
+	nftHit := nftState.armed || (anyPresence && nftState.installed)
+	if nftHit || v4Armed || v6Armed {
 		return true, nil
 	}
 	for _, err := range []error{nftErr, v4Err, v6Err} {
@@ -164,19 +175,84 @@ var (
 	killSwitchRunScript = runScriptWithSh
 )
 
-func nftKillSwitchArmed() (bool, error) {
+type nftKSState struct {
+	installed bool // table or chain present in any form
+	armed     bool // chain present, policy drop, v4 and v6 rules present
+}
+
+func nftKillSwitchState() (nftKSState, error) {
 	if _, err := killSwitchLookPath("nft"); err != nil {
-		return false, nil
+		return nftKSState{}, nil
 	}
-	out, err := killSwitchRun("nft", "list", "chain", "inet", "whoisthat_ks", "output")
-	if err == nil {
-		return true, nil
+	out, err := killSwitchRun("nft", "-j", "list", "table", "inet", "whoisthat_ks")
+	if err != nil {
+		// nft uses strerror; runCommandWithCaps pins LC_ALL=C for this string.
+		if strings.Contains(out, "No such file or directory") {
+			return nftKSState{}, nil
+		}
+		return nftKSState{}, fmt.Errorf("cannot inspect nftables kill-switch table: %w: %s", err, strings.TrimSpace(out))
 	}
-	// nft uses strerror; runCommandWithCaps pins LC_ALL=C for this string.
-	if strings.Contains(out, "No such file or directory") {
-		return false, nil
+	return parseNftKillSwitch(out)
+}
+
+// parseNftKillSwitch evaluates `nft -j list table inet whoisthat_ks` output.
+func parseNftKillSwitch(out string) (nftKSState, error) {
+	var doc struct {
+		Nftables []struct {
+			Chain *struct {
+				Name   string `json:"name"`
+				Policy string `json:"policy"`
+			} `json:"chain"`
+			Rule *struct {
+				Chain string            `json:"chain"`
+				Expr  []json.RawMessage `json:"expr"`
+			} `json:"rule"`
+		} `json:"nftables"`
 	}
-	return false, fmt.Errorf("cannot inspect nftables kill-switch table: %w: %s", err, strings.TrimSpace(out))
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		return nftKSState{}, fmt.Errorf("cannot parse nft kill-switch ruleset: %w", err)
+	}
+	st := nftKSState{installed: true}
+	var chain, drop bool
+	var v4, v6 int
+	for _, item := range doc.Nftables {
+		if c := item.Chain; c != nil && c.Name == "output" {
+			chain = true
+			drop = c.Policy == "drop"
+		}
+		if r := item.Rule; r != nil && r.Chain == "output" {
+			switch nftRuleFamily(r.Expr) {
+			case "ip":
+				v4++
+			case "ip6":
+				v6++
+			}
+		}
+	}
+	st.armed = chain && drop && v4 > 0 && v6 > 0
+	return st, nil
+}
+
+// nftRuleFamily returns "ip" or "ip6" when a rule matches on that payload
+// protocol, otherwise "".
+func nftRuleFamily(exprs []json.RawMessage) string {
+	for _, raw := range exprs {
+		var e struct {
+			Match *struct {
+				Left struct {
+					Payload *struct {
+						Protocol string `json:"protocol"`
+					} `json:"payload"`
+				} `json:"left"`
+			} `json:"match"`
+		}
+		if json.Unmarshal(raw, &e) == nil && e.Match != nil && e.Match.Left.Payload != nil {
+			if p := e.Match.Left.Payload.Protocol; p == "ip" || p == "ip6" {
+				return p
+			}
+		}
+	}
+	return ""
 }
 
 func iptablesKillSwitchArmed(bin string) (bool, error) {

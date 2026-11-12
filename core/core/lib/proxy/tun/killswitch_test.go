@@ -2,6 +2,7 @@ package tunmode
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -278,8 +279,9 @@ func TestKillSwitchArmedSkipsAbsentBackends(t *testing.T) {
 }
 
 func TestKillSwitchArmedDetectsNftChain(t *testing.T) {
+	correct := readKSFixture(t, "nft_ks_correct.json")
 	fakeProbes(t, map[string]bool{"nft": true}, func(string, ...string) (string, error) {
-		return "", nil
+		return correct, nil
 	})
 	armed, err := KillSwitchArmed()
 	if !armed || err != nil {
@@ -438,5 +440,67 @@ func TestKillSwitchDHCPRuleOrderedBeforeDropInNetns(t *testing.T) {
 	}
 	if dhcp > drop {
 		t.Fatalf("DHCP accept is after the drop:\n%s", s)
+	}
+}
+
+func readKSFixture(t *testing.T, name string) string {
+	t.Helper()
+	b, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// K-3: "armed" must mean the live ruleset really blocks, not that a chain of
+// that name exists. Fixtures are real `nft -j list table inet whoisthat_ks`
+// output (nft 1.0.9) captured in a throwaway netns.
+func TestKillSwitchArmedVerifiesLiveRuleset(t *testing.T) {
+	correct := readKSFixture(t, "nft_ks_correct.json")
+	cases := []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{"empty chain (policy drop, no rules)", readKSFixture(t, "nft_ks_empty_chain.json"), false},
+		{"v4-only half install", readKSFixture(t, "nft_ks_v4_only.json"), false},
+		{"policy accept with full rules", strings.Replace(correct, `"policy": "drop"`, `"policy": "accept"`, 1), false},
+		{"correct ruleset", correct, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeProbes(t, map[string]bool{"nft": true}, func(string, ...string) (string, error) {
+				return tc.out, nil
+			})
+			armed, err := KillSwitchArmed()
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if armed != tc.want {
+				t.Fatalf("KillSwitchArmed() = %v, want %v", armed, tc.want)
+			}
+		})
+	}
+}
+
+func TestKillSwitchArmedRejectsUnparseableNftOutput(t *testing.T) {
+	fakeProbes(t, map[string]bool{"nft": true}, func(string, ...string) (string, error) {
+		return "not json", nil
+	})
+	armed, err := KillSwitchArmed()
+	if armed || err == nil {
+		t.Fatalf("KillSwitchArmed() = %v, %v; want false + error", armed, err)
+	}
+}
+
+// A half-built table still drops traffic, so removal must not be declared
+// complete while it is there even though it is not "armed".
+func TestRemoveKillSwitchBlockRefusesWhileHalfInstalled(t *testing.T) {
+	half := readKSFixture(t, "nft_ks_empty_chain.json")
+	fakeProbes(t, map[string]bool{"nft": true}, func(string, ...string) (string, error) {
+		return half, nil
+	})
+	if err := RemoveKillSwitchBlock(); err == nil {
+		t.Fatal("RemoveKillSwitchBlock must fail while a drop-policy chain remains")
 	}
 }
