@@ -74,6 +74,10 @@ var validTunNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 // configured TUN interface (empty when TUN is unused), dnsServers the resolver
 // list from the app config.
 func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string) error {
+	// K-2: refuse to arm over a DoT-only resolver we cannot neutralise.
+	if err := neutraliseDoT(tunName); err != nil {
+		return err
+	}
 	switch probeFirewall() {
 	case firewallNftables:
 		return setupKillSwitchBlockNftables(proxyIPs, tunName, dnsServers)
@@ -98,6 +102,9 @@ func RemoveKillSwitchBlock() error {
 	}
 	if armed {
 		return fmt.Errorf("kill-switch rules are still installed (nft: %v, iptables: %v)", nftErr, iptErr)
+	}
+	if err := restoreDoT(); err != nil {
+		logger.Warnf("kill-switch: %v", err)
 	}
 	return nil
 }
