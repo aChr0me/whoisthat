@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"log"
 	"os"
-	"os/exec"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -42,7 +41,7 @@ func CanTun() bool {
 		return true
 	}
 
-	check := exec.Command("sh")
+	check := SafeCommand("sh")
 	check.SysProcAttr = &syscall.SysProcAttr{
 		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN},
 	}

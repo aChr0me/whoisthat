@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"sync"
 	"syscall"
+	"whoisthat-core/utils"
 
 	"golang.org/x/sys/unix"
 )
@@ -39,7 +39,7 @@ func probeFirewall() firewallBackend {
 			fwBackend = firewallNftables
 			return
 		}
-		if _, err := exec.LookPath("nft"); err == nil {
+		if _, err := utils.SafeLookPath("nft"); err == nil {
 			fwBackend = firewallNftables
 		} else {
 			fwBackend = firewallIptables
@@ -49,7 +49,7 @@ func probeFirewall() firewallBackend {
 }
 
 func runScriptWithSh(script string) (string, error) {
-	cmd := exec.Command("sh")
+	cmd := utils.SafeCommand("sh")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
 	}
@@ -80,8 +80,8 @@ func runScriptWithSh(script string) (string, error) {
 // combined output, even on failure. Callers that need to tell "not there" from
 // "could not look" parse the output/exit code themselves.
 func runCommandWithCaps(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	cmd := utils.SafeCommand(name, args...)
+	cmd.Env = append(cmd.Env, "LC_ALL=C")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
 	}

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"whoisthat-core/utils"
 
 	"whoisthat-core/lib/logger"
 )
@@ -170,7 +171,7 @@ func killSwitchProbeAll(anyPresence bool) (bool, error) {
 // Test seams: the probes are what turns "the firewall lies" into a testable
 // error, so let unit tests simulate exit codes without real capabilities.
 var (
-	killSwitchLookPath  = exec.LookPath
+	killSwitchLookPath  = utils.SafeLookPath
 	killSwitchRun       = runCommandWithCaps
 	killSwitchRunScript = runScriptWithSh
 )
