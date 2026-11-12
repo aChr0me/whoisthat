@@ -114,6 +114,28 @@ refresh honouring `profile-update-interval`, unit tests over cached fixtures
 **T13 — docs.** `docs/happ-migration.md`: what changes for the user, how to go back
 to Happ, the recovery lines for every failure mode in this plan.
 
+## Status (updated 2026-11-12, cloud session, hermetic tier only)
+
+The cloud probe verdict was hermetic-only (no `ip`, no `xray`, no TUN, no egress),
+so only tickets whose acceptance is a hermetic test were taken. Each has a test
+that fails on the previous tree; commits are one per ticket on `hermes/plan`.
+
+| Ticket | Status | Notes |
+|---|---|---|
+| T1 | done | `docs/baseline.md` |
+| T2 | done (hermetic) | script assertions + live ruleset order in a user/net namespace. The "packet traverses" netns send test needs `ip`/a real link: host-acceptance. |
+| T3 | done (hermetic) | fake `resolvectl` seam. A real stub-DoT resolver netns test is host-acceptance. |
+| T4 | done (hermetic) | fixtures are real `nft -j` output (nft 1.0.9). Go `KillSwitchArmed` + Rust `status -s` / `doctor`. |
+| T5 | **host-acceptance-pending** | netns DNS/`kill -9` test needs `ip`, a real resolver path. Not started. |
+| T6 | done (hermetic) | injected bad rule in a netns leaves no table; failed re-arm keeps the previous ruleset. |
+| T7 | **host-acceptance-pending** | needs a live proxy-IP rotation. Not started. |
+| T8 | **host-acceptance-pending** | needs `kill -9` + restart with conntrack/mangle on a real host. Not started. |
+| T9 | partial (core part done) | `CAP_SETPCAP` dropped after the ambient raise, tested via `/proc/self/status`. Narrowing the **xray child** is open: `tun-in`/`sockopt.mark` may need `net_admin` on kernels < 5.17; needs `getpcaps` + connect on the host. See `docs/architecture/security.md`. |
+| T10 | done (hermetic) | https-only fetch and redirects (loopback http allowed), pinned PATH/binaries, guard test. The `getcap`/grep acceptance holds; unit PATH pin is in the user unit only (T11 owns the system unit). |
+| T11 | **host-acceptance-pending** | `systemd-analyze verify` + reboot test. Not started. |
+| T12 | partial (parser part done) | `core/core/lib/crypt5`: marker parser, redirect chain, non-config body rejection. **Not done:** AEAD unwrap, key table, wrong-key rejection, `sub add` CLI, refresh wiring: the payload byte layout and keys are not in the repo and need a confirmed capture. Implemented in Go beside the existing fetcher, not as a Rust module. |
+| T13 | not started | |
+
 ## Test tiers
 
 - **T0 hermetic (default, in CI):** `cargo test`, `go test`, plus the netns suites
