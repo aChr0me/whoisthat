@@ -319,15 +319,16 @@ func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []st
 	dns4, dns6 := splitIPsValid(dnsServers)
 
 	var b strings.Builder
-	b.WriteString("set -e\n")
-	// Repair an interrupted install: a table without its chain must not be
-	// treated as armed. policy drop makes the bootstrap fail-closed before the
-	// allowlist exists; the batch below refills it atomically.
-	b.WriteString("if ! nft list chain inet whoisthat_ks output >/dev/null 2>&1; then\n")
-	b.WriteString("    nft add table inet whoisthat_ks 2>/dev/null || true\n")
-	b.WriteString("    nft add chain inet whoisthat_ks output '{ type filter hook output priority 0; policy drop; }'\n")
-	b.WriteString("fi\n")
-	b.WriteString("nft -f - <<'WHOISTHAT_KS_EOF'\n")
+	// K-6: one transaction. `add table/chain` are idempotent, and the kernel
+	// applies or rejects the whole batch, so there is no window with a
+	// drop-policy chain and an empty allowlist. If the batch is rejected a
+	// previously armed table is untouched (atomic); a table that did not exist
+	// before this attempt is deleted so nothing half-built remains.
+	b.WriteString("PREV=0\n")
+	b.WriteString("nft list table inet whoisthat_ks >/dev/null 2>&1 && PREV=1\n")
+	b.WriteString("if ! nft -f - <<'WHOISTHAT_KS_EOF'\n")
+	b.WriteString("add table inet whoisthat_ks\n")
+	b.WriteString("add chain inet whoisthat_ks output { type filter hook output priority 0; policy drop; }\n")
 	b.WriteString("flush chain inet whoisthat_ks output\n")
 
 	b.WriteString("add rule inet whoisthat_ks output oif lo accept\n")
@@ -364,6 +365,11 @@ func buildKillSwitchNftScript(proxyIPs []string, tunName string, dnsServers []st
 
 	b.WriteString("add rule inet whoisthat_ks output drop\n")
 	b.WriteString("WHOISTHAT_KS_EOF\n")
+	b.WriteString("then\n")
+	b.WriteString("    [ \"$PREV\" = 1 ] || nft delete table inet whoisthat_ks 2>/dev/null || true\n")
+	b.WriteString("    echo 'kill-switch: nft batch rejected, nothing applied' >&2\n")
+	b.WriteString("    exit 1\n")
+	b.WriteString("fi\n")
 	return b.String()
 }
 
