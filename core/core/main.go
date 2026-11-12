@@ -100,6 +100,7 @@ func main() {
 
 	stop_sig := make(chan bool, 1)
 	utils.RaiseAmbientCaps()
+	utils.DropSetpcap()
 
 	// Cores from older builds hold no flock. Refuse to start while their
 	// socket is live: this check runs before the reconcile so we never tear

@@ -70,3 +70,32 @@ trap - EXIT
 	check.Stderr = &stderr
 	return check.Run() == nil
 }
+
+// DropSetpcap removes CAP_SETPCAP from the bounding, permitted, effective and
+// inheritable sets (F-01). It must run right after RaiseAmbientCaps: the
+// ambient set survives the drop, so children keep net_admin/net_raw, but a
+// compromised core can no longer rewrite capability sets or hand out more.
+// Failures are logged, not fatal: the core is still usable, just less
+// hardened, and the doctor reports the caps.
+func DropSetpcap() {
+	// The bounding-set drop itself needs CAP_SETPCAP in effect, so do it first.
+	if err := unix.Prctl(unix.PR_CAPBSET_DROP, unix.CAP_SETPCAP, 0, 0, 0); err != nil {
+		log.Printf("[WARN] DropSetpcap: PR_CAPBSET_DROP failed: %v", err)
+	}
+
+	var hdr unix.CapUserHeader
+	hdr.Version = unix.LINUX_CAPABILITY_VERSION_3
+	var data [2]unix.CapUserData
+	if err := unix.Capget(&hdr, &data[0]); err != nil {
+		log.Printf("[WARN] DropSetpcap: capget failed: %v", err)
+		return
+	}
+	mask := ^uint32(1 << (unix.CAP_SETPCAP % 32))
+	i := unix.CAP_SETPCAP / 32
+	data[i].Effective &= mask
+	data[i].Permitted &= mask
+	data[i].Inheritable &= mask
+	if err := unix.Capset(&hdr, &data[0]); err != nil {
+		log.Printf("[WARN] DropSetpcap: capset failed: %v", err)
+	}
+}
