@@ -6,6 +6,7 @@ require (
 	github.com/matoous/go-nanoid/v2 v2.1.0
 	github.com/miekg/dns v1.1.73
 	github.com/xtls/xray-core v1.260327.1-0.20260710210335-64fada32b5b9
+	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.49.0
 	google.golang.org/grpc v1.85.0
