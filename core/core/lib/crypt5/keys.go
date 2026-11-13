@@ -7,19 +7,9 @@ import (
 	"sync"
 )
 
-// vendoredKeys maps an 8-character marker to a base64 PKCS#8 DER RSA-4096
-// private key. The scheme has 128 of them (docs/crypt5-format.md); marker
-// "qzmtapkx" is decrypt-only.
-//
-// THIS TABLE IS EMPTY. It is the one non-reconstructable constant of the
-// scheme, it is not in this repository, and it has to be copied verbatim from
-// the reference implementation (src/keys.rs) by someone with access to it.
-// Until then DefaultKeys() resolves nothing and every real link fails with
-// ErrUnknownMarker. TestVendoredTableWellFormed starts enforcing the shape
-// (128 entries, RSA-4096, qzmtapkx present) as soon as entries are added.
-var vendoredKeys = map[string]string{
-	// "marker": "<base64 DER>",
-}
+// vendoredKeys lives in keys_table.go (generated from the reference
+// implementation's src/keys.rs, 36 markers — docs/crypt5-format.md). It is the
+// one non-reconstructable constant of the scheme; "qzmtapkx" is decrypt-only.
 
 var (
 	parsedMu   sync.Mutex

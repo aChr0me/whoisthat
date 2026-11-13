@@ -219,10 +219,10 @@ func TestDecryptPayloadAsWrittenInLink(t *testing.T) {
 
 func TestVendoredTableWellFormed(t *testing.T) {
 	if len(vendoredKeys) == 0 {
-		t.Skip("vendored 128-marker table is empty: it is not in this repository and must be copied verbatim from the reference implementation")
+		t.Skip("vendored marker table is empty: copy it verbatim from the reference implementation")
 	}
-	if len(vendoredKeys) != 128 {
-		t.Errorf("vendored table has %d markers, want 128", len(vendoredKeys))
+	if len(vendoredKeys) != 36 {
+		t.Errorf("vendored table has %d markers, want 36", len(vendoredKeys))
 	}
 	lookup := DefaultKeys()
 	for m := range vendoredKeys {

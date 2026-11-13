@@ -9,11 +9,13 @@ crypt5 matters here.
 
 ## Keys
 
-`src/keys.rs` holds **128 8-character markers**, each mapping to an RSA-4096
-**PKCS#8** private key `("marker", "<base64 DER>")`. One marker (`qzmtapkx`) is
-decrypt-only — it has no valid public half, so encryption must skip it, but decryption
-must still accept it. Vendoring: copy the whole table verbatim; it is the only
-non-reconstructable constant in the scheme.
+`src/keys.rs` holds the `CRYPT5_PKCS8` table: **36 8-character markers**, each mapping to
+an RSA-4096 **PKCS#8** private key `("marker", "<base64 DER>")`. One marker (`qzmtapkx`)
+is decrypt-only — no valid public half, so encryption must skip it, but decryption must
+still accept it. The same file also carries `V2_KEYS` and `AES_GCM_KEYS` for other crypt
+modes; crypt5 needs only the PKCS#8 set. Vendoring: copy those 36 verbatim; they are the
+only non-reconstructable constant in the scheme. `core/core/lib/crypt5/keys_table.go` is
+already generated from them.
 
 ## Decrypt, in order
 
