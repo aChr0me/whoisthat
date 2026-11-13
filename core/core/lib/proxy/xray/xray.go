@@ -16,15 +16,23 @@ import (
 	"whoisthat-core/lib/logger"
 	"whoisthat-core/lib/xraymgr"
 	"whoisthat-core/utils"
-
-	"golang.org/x/sys/unix"
 )
 
-// Test seams: the real values need privileges (ambient caps) or a downloaded
-// binary, neither of which is available in unit tests.
+// Test seams: the real binary is downloaded, which is not available in unit tests.
 var (
-	ambientCaps = []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW}
-	getXrayBin  = func() (string, error) { return xraymgr.GetManager().GetXrayBin() }
+	// xrayCommand builds the xray child. Production wraps it in the no-caps
+	// shim (F-01): the core's ambient net_admin/net_raw would otherwise be
+	// inherited by xray, which runs a provider-supplied config. NOTE: outbounds
+	// carry sockopt.mark (xrayjson/routing.go) and SO_MARK needs CAP_NET_ADMIN
+	// (CAP_NET_RAW from kernel 5.17), so a real connect needs a host acceptance run.
+	xrayCommand = func(ctx context.Context, bin string, args ...string) (*exec.Cmd, error) {
+		self, err := os.Executable()
+		if err != nil {
+			return nil, fmt.Errorf("cannot locate own binary for the no-caps shim: %w", err)
+		}
+		return exec.CommandContext(ctx, self, append([]string{utils.NoCapsExecArg, bin}, args...)...), nil
+	}
+	getXrayBin = func() (string, error) { return xraymgr.GetManager().GetXrayBin() }
 )
 
 type XrayCore struct {
@@ -105,7 +113,11 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cmd := exec.CommandContext(ctx, xraybin, "run")
+	cmd, err := xrayCommand(ctx, xraybin, "run")
+	if err != nil {
+		cancel()
+		return fmt.Errorf("failed to start xray: %w", err)
+	}
 	stdin, err := cmd.StdinPipe()
 
 	if err != nil {
@@ -123,9 +135,7 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 		logger.Warnf("xray: cannot capture stderr: %v", err)
 	}
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		AmbientCaps: ambientCaps,
-	}
+	cmd.SysProcAttr = &syscall.SysProcAttr{}
 
 	if uid := utils.DedicatedUid(); uid > 0 {
 		gid := utils.DedicatedGid()

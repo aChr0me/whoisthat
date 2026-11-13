@@ -130,10 +130,10 @@ that fails on the previous tree; commits are one per ticket on `hermes/plan`.
 | T6 | done (hermetic) | injected bad rule in a netns leaves no table; failed re-arm keeps the previous ruleset. |
 | T7 | **host-acceptance-pending** | needs a live proxy-IP rotation. Not started. |
 | T8 | **host-acceptance-pending** | needs `kill -9` + restart with conntrack/mangle on a real host. Not started. |
-| T9 | partial (core part done) | `CAP_SETPCAP` dropped after the ambient raise, tested via `/proc/self/status`. Narrowing the **xray child** is open: `tun-in`/`sockopt.mark` may need `net_admin` on kernels < 5.17; needs `getpcaps` + connect on the host. See `docs/architecture/security.md`. |
+| T9 | done (hermetic), host-acceptance-pending | `CAP_SETPCAP` dropped after the ambient raise; xray child now launched via a no-caps shim and its `CapAmb` is zero (behavioral test, fails when the shim is bypassed). Still needs `getpcaps` + a real connect on the host: `sockopt.mark` needs `net_admin`/`net_raw`. See `docs/architecture/security.md`. |
 | T10 | done (hermetic) | https-only fetch and redirects (loopback http allowed), pinned PATH/binaries, guard test. The `getcap`/grep acceptance holds; unit PATH pin is in the user unit only (T11 owns the system unit). |
 | T11 | **host-acceptance-pending** | `systemd-analyze verify` + reboot test. Not started. |
-| T12 | partial (parser part done) | `core/core/lib/crypt5`: marker parser, redirect chain, non-config body rejection. **Not done:** AEAD unwrap, key table, wrong-key rejection, `sub add` CLI, refresh wiring: the payload byte layout and keys are not in the repo and need a confirmed capture. Implemented in Go beside the existing fetcher, not as a Rust module. |
+| T12 | partial (parser + decrypt done) | `core/core/lib/crypt5`: marker parser, redirect chain, body rejection, and now `Decrypt` (block swap, marker, both layouts with fallback, RSA PKCS#1 unwrap, ChaCha20-Poly1305) with round-trip, wrong-key, tamper, malformed and unknown-marker tests. **Blocked:** the 128-marker key table is not in the repo or docs (`vendoredKeys` is empty), so no real link decrypts yet, and vectors come from a test-only encoder, not a recorded reference link. **Not done:** `sub add` CLI, refresh wiring. |
 | T13 | not started | |
 
 ## Test tiers

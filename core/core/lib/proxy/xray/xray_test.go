@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -66,11 +67,13 @@ func fakeXray(t *testing.T, body string) string {
 // useFakeBinary replaces the privileged defaults with a plain script.
 func useFakeBinary(t *testing.T, path string) {
 	t.Helper()
-	oldCaps, oldBin := ambientCaps, getXrayBin
-	ambientCaps = nil
+	oldCmd, oldBin := xrayCommand, getXrayBin
+	xrayCommand = func(ctx context.Context, bin string, args ...string) (*exec.Cmd, error) {
+		return exec.CommandContext(ctx, bin, args...), nil // no shim: it re-executes the core binary
+	}
 	getXrayBin = func() (string, error) { return path, nil }
 	t.Cleanup(func() {
-		ambientCaps = oldCaps
+		xrayCommand = oldCmd
 		getXrayBin = oldBin
 	})
 }

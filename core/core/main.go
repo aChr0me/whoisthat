@@ -38,6 +38,7 @@ func versionLine() string {
 
 // handleArgs reports whether the process should exit before starting the daemon.
 func handleArgs(args []string) (code int, done bool) {
+	utils.HandleNoCapsExec(args) // xray launch shim; never returns when it matches
 	if len(args) == 0 {
 		return 0, false
 	}
