@@ -36,6 +36,16 @@ Every time you run `go build`, Linux assigns a new filesystem **inode** to the o
 `core-v*` tag. That repository is generated and read-only: open issues and pull requests here.
 :::
 
+::: warning Before starting a new host-acceptance / manual test session
+A killed or crashed `whoisthat-core` can leave the `whoisthat`, `whoisthat_mangle` or
+`whoisthat_ks` nft tables and the `whoisthattun` interface in place. If nothing is running
+to reconcile them, the next test session silently inherits that half-torn-down state —
+this has broken DHCP-sourced DNS for the whole desktop. Run `sudo ./core/core/whoisthat-core
+--check-clean` before starting a new session; it exits non-zero and lists what it found if
+stale state is present with no core running, and exits 0 if the box is clean. If it fails,
+run `sudo ./core/core/whoisthat-core --cleanup` and re-check before continuing.
+:::
+
 ---
 
 ## Unified build commands

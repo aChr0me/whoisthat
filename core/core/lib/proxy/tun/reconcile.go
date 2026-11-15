@@ -1,6 +1,9 @@
 package tunmode
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // buildReconcileScript returns an idempotent teardown script that removes any
 // leftover whoisthat networking state from a previous core that exited without
@@ -105,4 +108,57 @@ func ReconcileOrphanedRules(tunName string) error {
 	}
 	_, err := runScriptWithSh(buildReconcileScript(tunName))
 	return err
+}
+
+// orphanedStateTables lists the nft tables ReconcileOrphanedRules tears down
+// that --check-clean treats as a "stale state" signal. whoisthat_split is
+// deliberately excluded: it is only ever present together with whoisthat_ks
+// or whoisthat_mangle, so checking those three is sufficient and keeps the
+// message focused on what a user would actually need to act on.
+var orphanedStateTables = []struct {
+	family string
+	name   string
+}{
+	{"ip", "whoisthat"},
+	{"ip6", "whoisthat"},
+	{"ip", "whoisthat_mangle"},
+	{"ip6", "whoisthat_mangle"},
+	{"inet", "whoisthat_mangle"},
+	{"inet", "whoisthat_ks"},
+}
+
+// DetectOrphanedState reports whether any nftables table or TUN interface the
+// core creates is still present on the system, which --check-clean treats as
+// evidence of a previous core that exited without cleaning up after itself.
+// It is a read-only probe: unlike ReconcileOrphanedRules it never deletes
+// anything, so it is safe to call regardless of whether a core is running.
+// The caller (main.go's --check-clean) is responsible for first confirming no
+// core is currently running — a live core legitimately owns this state.
+func DetectOrphanedState(tunName string) (found []string, err error) {
+	if tunName == "" {
+		tunName = "whoisthattun"
+	}
+	seen := map[string]bool{}
+	for _, t := range orphanedStateTables {
+		key := t.family + " " + t.name
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		// Mirrors the detection pattern nftKillSwitchState already uses:
+		// CombinedOutput + LC_ALL=C so "No such file or directory" is a
+		// stable, locale-independent signal for "table absent".
+		out, cmdErr := runCommandWithCaps("nft", "list", "table", t.family, t.name)
+		if cmdErr == nil {
+			found = append(found, fmt.Sprintf("nft table %s %s", t.family, t.name))
+			continue
+		}
+		if !strings.Contains(out, "No such file or directory") {
+			return found, fmt.Errorf("cannot inspect nft table %s %s: %w: %s", t.family, t.name, cmdErr, strings.TrimSpace(out))
+		}
+	}
+	if _, cmdErr := runCommandWithCaps("ip", "link", "show", tunName); cmdErr == nil {
+		found = append(found, fmt.Sprintf("interface %s", tunName))
+	}
+	return found, nil
 }

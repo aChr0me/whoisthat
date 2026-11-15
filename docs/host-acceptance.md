@@ -17,6 +17,14 @@ only on the user's go-ahead. `docs/PLAN.md` marks them host-acceptance-pending.
 5. Known recovery lines, rehearsed before the first arm:
    `whoisthat settings set kill-switch=false --force` → `nft delete table inet whoisthat_ks` →
    `systemctl --user restart NetworkManager` → router/`happd` untouched.
+6. **Pre-flight stale-state check, before any new test session starts:**
+   `sudo ./core/core/whoisthat-core --check-clean` (built binary from step below). Exit 0
+   means no leftover `whoisthat`/`whoisthat_mangle`/`whoisthat_ks` nft tables and no
+   `whoisthattun` interface from a previous killed/crashed run. If it exits non-zero, a
+   prior session's state is still on the box (this is exactly what broke DHCP-sourced DNS
+   three times during earlier manual testing) — run `sudo ./core/core/whoisthat-core --cleanup`
+   first and re-run `--check-clean` until it passes, *then* start the new session. Never
+   skip this because "the last run looked clean" — it is read-only and costs one command.
 
 ## Suites first, one shell, in this order
 

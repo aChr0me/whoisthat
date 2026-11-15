@@ -29,7 +29,7 @@ import (
 	"whoisthat-core/utils"
 )
 
-const usage = "Usage: whoisthat-core\n       whoisthat-core --arm-boot <config-dir>\n\nRuns in the foreground and serves the TUI/CLI over IPC.\n--arm-boot installs the kill-switch from config.json and exits (boot unit).\n"
+const usage = "Usage: whoisthat-core\n       whoisthat-core --arm-boot <config-dir>\n       whoisthat-core --cleanup\n       whoisthat-core --check-clean\n\nRuns in the foreground and serves the TUI/CLI over IPC.\n--arm-boot installs the kill-switch from config.json and exits (boot unit).\n--cleanup clears orphaned firewall/TUN state from a previous core (no daemon needed).\n--check-clean exits non-zero if orphaned state is present with no core running; run before a new test session.\n"
 
 // versionLine is a stable contract: install.sh and release.yml parse it.
 func versionLine() string {
@@ -81,6 +81,31 @@ func handleArgs(args []string) (code int, done bool) {
 			return 1, true
 		}
 		fmt.Println("orphaned firewall/routing rules cleared")
+		return 0, true
+	case "--check-clean":
+		// Pre-flight probe for test/dev sessions: fails loudly if firewall or
+		// TUN state from a previous killed/crashed core is still on the
+		// system, before a new run can silently compound on top of it.
+		// Read-only; never touches anything (see --cleanup for the fix).
+		appconfig.LoadConfig()
+		if coreAlreadyRunning() {
+			fmt.Println("whoisthat-core: a core is already running; its state is expected and owned by it")
+			return 0, true
+		}
+		found, err := tunmode.DetectOrphanedState(appconfig.GetConfig().TunName)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "whoisthat-core: check-clean:", err)
+			return 1, true
+		}
+		if len(found) > 0 {
+			fmt.Fprintln(os.Stderr, "whoisthat-core: stale state from a previous run detected, no core is running:")
+			for _, f := range found {
+				fmt.Fprintln(os.Stderr, "  -", f)
+			}
+			fmt.Fprintln(os.Stderr, "run `whoisthat-core --cleanup` before starting a new session")
+			return 1, true
+		}
+		fmt.Println("clean: no leftover whoisthat firewall/TUN state found")
 		return 0, true
 	case "--help", "-h":
 		fmt.Print(usage)
