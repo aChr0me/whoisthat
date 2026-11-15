@@ -75,3 +75,41 @@ reboot.
 - No system package exists for xray on this box (`pacman -Ss ^xray$` empty); manual
   install is the only option until one is packaged.
 - Happ's own copy at `/opt/happ/bin/core/xray` (26.10.29) left untouched.
+
+## Bugs found and fixed during the first live run (commit 86417b9)
+
+- crypt5 decrypt assumed URL-safe base64; the real happy-link payload uses
+  standard base64 (`+`/`/`). Fixed to try standard first, URL-safe as fallback.
+- xray preflight called `run -test` with no `-format`/`-c` flags; v26.x needs
+  `-format=json -c /dev/stdin` or every profile fails latency with exit 23.
+- IPv6 default-route install omitted `dev <iface>`; RA gateways are almost
+  always link-local (`fe80::...`), and the kernel refuses a link-local nexthop
+  with no explicit device ("Egress device not specified").
+- Live TUN enable is `whoisthat mode tun` after `connect`, not
+  `settings set autoconnect-mode=tun` (that key only controls boot
+  autoconnect, confirmed by reading the CLI's own `mode --help`).
+
+## T5 — first attempt, inconclusive (needs a clean re-run)
+
+Connect (`3:3`, group 3, real vless/hysteria2 profile) → `mode tun` →
+`settings set kill-switch=true` succeeded: `status -j` showed
+`connected:true, mode:tun, kill_switch_armed:true`, and `nft list table inet
+whoisthat_ks` showed the real drop-all-except-whitelist chain with the live
+server IPs. DNS (`getent hosts`) and HTTPS (`curl`) both worked while armed.
+
+The actual `kill -9 core` + re-check step was lost to a client disconnect
+mid-command; no verified pass/fail recorded. Retest needed, plus confirm the
+new `whoisthat-core --cleanup` one-shot clears the state afterward without a
+full daemon restart.
+
+**Real finding from this attempt, independent of the daemon's own
+correctness**: after the daemon died (whether from this test or a plain
+`kill -9`), the `whoisthat_mangle`/`whoisthat` nft tables and the
+`whoisthattun` interface survived indefinitely — the daemon's own startup
+reconcile (`ReconcileOrphanedRules`) only runs on the *next* `whoisthat-core`
+start, so a user who doesn't relaunch it stays stuck with a half-torn-down
+firewall state that broke DHCP-sourced DNS until manually cleared. Added
+`whoisthat-core --cleanup` as a direct, no-daemon-needed hook for this —
+see commit 86417b9. Still needs a documented/automated trigger (recovery
+docs below, and ideally a systemd `ExecStopPost` once the daemon runs as a
+unit) so a crash doesn't require remembering a manual command.
