@@ -14,13 +14,20 @@ against the CLI in this tree.
 
 ## Status of this migration
 
-Be clear about what is and is not proven before relying on it.
+Be clear about what is and is not proven before relying on it. "Implemented"
+means code plus a hermetic test that fails without it. "Host-acceptance pending"
+means the part that needs a real kernel, TUN device, reboot or live panel has not
+been run; see [host acceptance](/host-acceptance).
 
-| Area | State |
-|---|---|
-| Kill-switch fixes K-1…K-7, K-14 | Code and hermetic tests done. The behaviour that needs a real kernel, TUN device or reboot (DHCP traversal, resolver answering while armed, live proxy-IP rotation, boot ordering) is **host-acceptance pending**: see [host acceptance](/host-acceptance). |
-| crypt5 links (`happ://crypt5/…`) | Marker parser, redirect chain and AEAD decrypt exist. `whoisthat sub add <happy-link>` does **not** resolve crypt5 yet, and the key table is not vendored, so no real link decrypts today. Until that lands, add a subscription whose URL is a plain config body. |
-| Happ itself | Never modified. `happd.service` and `happ-xray` keep their address and route. |
+| Area | Implemented (hermetic test) | Host-acceptance pending |
+|---|---|---|
+| K-4: allowlisted resolvers answer with the switch armed | `dns-servers` are excluded from the port-53 redirect in all three plans (`TestDnsHijackForExcludesAllowlistedResolvers`). | A resolver answering in a netns while the core is killed (`kill -9`). |
+| K-5: allowlist follows proxy-IP rotation | The allowlist is re-armed atomically when the resolved set changes, is a no-op when unchanged, and keeps the old IPs if the re-arm fails (`TestRotateProxyIPsRearmsWithNewAddress`, `TestRotateProxyIPsFailedRearmKeepsOldIPs`, `TestRotationWatcherRearmsOnResolvedChange`). | A live rotation on the box. |
+| K-7: conntrack/mangle cleanup | Removed by table or chain name on every shutdown path, including a hung `Stop()`, and in the startup reconcile. | `kill -9` plus restart on a real host. |
+| K-14: boot-time arming | `whoisthat autostart boot-unit` emits the unit; it passes `systemd-analyze verify`. | An armed reboot with the tunnel down: traffic must stay dead until the core connects. |
+| Other kill-switch fixes (K-1…K-3, K-6) | Code and hermetic tests done. | DHCP traversal on a real link; DoT resolver behaviour. |
+| crypt5 links (`happ://crypt5/…`) | `whoisthat sub add` accepts a `…/happy-link/<id>` URL or a `happ://crypt5/…` link. The core follows the 302 to the marker, decrypts it against the 36-marker key table vendored in `core/core/lib/crypt5/keys_table.go`, and fetches the result with `X-HWID` and `User-Agent: Happ/4.7.2/Desktop/341`. This runs on every refresh, since crypt5 is re-minted each time. Errors (no HWID, unknown marker, malformed payload, AEAD failure, non-https) are distinct and never fall back to a plain fetch (`TestHappResolveHappyPath`, `TestHappRefreshRedecryptsChangedPayload`, `TestHappErrorsAreDistinctAndNeverFallThrough`, `TestHappRejectsHTTPLink`). | One live fetch against a real panel. The test vectors come from a test-only encoder using the table's own keys, not a recorded Happ link. |
+| Happ itself | Never modified. `happd.service` and `happ-xray` keep their address and route. | None. |
 
 ## What changes for you
 
@@ -32,17 +39,20 @@ Be clear about what is and is not proven before relying on it.
   The rules survive `whoisthat core stop` on purpose.
 - **Allowlisted resolvers keep working.** Port-53 traffic to the configured
   `dns-servers` is excluded from the DNS redirect, so those resolvers still
-  answer if the core dies (K-4).
+  answer if the core dies (K-4; the live proof is host-acceptance pending).
 - **The kill-switch follows server IP changes.** If the server's address
   rotates while connected, the allowlist is re-armed in one atomic step, with no
-  reconnect (K-5).
+  reconnect (K-5; the live rotation is host-acceptance pending).
 - **Reboots can be covered.** The optional boot unit arms the switch before the
   network comes up (K-14, below). Without it, the switch re-arms when the core
   starts in your session.
 - **Subscription fetches are https-only**, and `nft`/`ip`/`xray` are resolved
   from fixed system paths, not your `PATH`.
 - **Device id.** The subscription provider sees whoisthat's HWID, not Happ's.
-  Check it with `whoisthat hwid status`.
+  It is generated once and persisted, so it is stable and does not use up a
+  device slot on each refresh. Check it with `whoisthat hwid status`. Happ links
+  need it enabled: with HWID off or unset the core refuses to fetch rather than
+  receive placeholder cards.
 
 ## Switching over
 
@@ -164,7 +174,11 @@ sudo ip link del dev whoisthattun 2>/dev/null
 ### Subscription will not add or refresh
 
 - `http://` subscription URLs are rejected; use https.
-- crypt5 `happy-link` URLs are not resolved by `sub add` yet (see status above).
+- A Happ link (`…/happy-link/<id>` or `happ://crypt5/…`) fails with a specific
+  error and is never retried as a plain URL: *no hardware id* (enable HWID, see
+  `whoisthat hwid status`), *unknown key marker* or *malformed payload* (the
+  panel minted a format this build does not know), *decryption failed* (corrupt
+  or truncated link; re-copy it), or *not an https URL*.
 - An empty or placeholder card list usually means a wrong or missing HWID:
   `whoisthat hwid status`.
 
