@@ -126,15 +126,15 @@ that fails on the previous tree; commits are one per ticket on `hermes/plan`.
 | T2 | done (hermetic) | script assertions + live ruleset order in a user/net namespace. The "packet traverses" netns send test needs `ip`/a real link: host-acceptance. |
 | T3 | done (hermetic) | fake `resolvectl` seam. A real stub-DoT resolver netns test is host-acceptance. |
 | T4 | done (hermetic) | fixtures are real `nft -j` output (nft 1.0.9). Go `KillSwitchArmed` + Rust `status -s` / `doctor`. |
-| T5 | **host-acceptance-pending** | netns DNS/`kill -9` test needs `ip`, a real resolver path. Not started. |
+| T5 | done (hermetic), host-acceptance-pending | `dnsHijackFor` carries `dns-servers` in `Exclude` for all three plans. The netns resolver / `kill -9` proof needs `ip`: host-acceptance. |
 | T6 | done (hermetic) | injected bad rule in a netns leaves no table; failed re-arm keeps the previous ruleset. |
-| T7 | **host-acceptance-pending** | needs a live proxy-IP rotation. Not started. |
-| T8 | **host-acceptance-pending** | needs `kill -9` + restart with conntrack/mangle on a real host. Not started. |
+| T7 | done (hermetic), host-acceptance-pending | `ProxyManager.RotateProxyIPs` + periodic re-resolve re-arm the allowlist atomically, no reconnect. A live rotation on the box is host-acceptance. |
+| T8 | done (hermetic), host-acceptance-pending | cleanup is by name (nft tables, iptables `WHOISTHAT_MANGLE_*` chains), runs on every SIGINT/SIGTERM path even when Stop() times out, and in the startup reconcile. `kill -9` + restart on a real host is host-acceptance. |
 | T9 | done (hermetic), host-acceptance-pending | `CAP_SETPCAP` dropped after the ambient raise; xray child now launched via a no-caps shim and its `CapAmb` is zero (behavioral test, fails when the shim is bypassed). Still needs `getpcaps` + a real connect on the host: `sockopt.mark` needs `net_admin`/`net_raw`. See `docs/architecture/security.md`. |
 | T10 | done (hermetic) | https-only fetch and redirects (loopback http allowed), pinned PATH/binaries, guard test. The `getcap`/grep acceptance holds; unit PATH pin is in the user unit only (T11 owns the system unit). |
-| T11 | **host-acceptance-pending** | `systemd-analyze verify` + reboot test. Not started. |
+| T11 | done (hermetic), host-acceptance-pending | `whoisthat-core --arm-boot` + `whoisthat autostart boot-unit`; unit verified with `systemd-analyze verify`. The armed-reboot test is host-acceptance. |
 | T12 | partial (parser + decrypt done) | `core/core/lib/crypt5`: marker parser, redirect chain, body rejection, and now `Decrypt` (block swap, marker, both layouts with fallback, RSA PKCS#1 unwrap, ChaCha20-Poly1305) with round-trip, wrong-key, tamper, malformed and unknown-marker tests. **Blocked:** the 128-marker key table is not in the repo or docs (`vendoredKeys` is empty), so no real link decrypts yet, and vectors come from a test-only encoder, not a recorded reference link. **Not done:** `sub add` CLI, refresh wiring. |
-| T13 | not started | |
+| T13 | done | `docs/happ-migration.md` (states what is still unproven). |
 
 ## Test tiers
 
