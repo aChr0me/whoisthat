@@ -69,6 +69,14 @@ fn generate_unit_file(core_path: &str) -> String {
          Restart=on-failure\n\
          RestartSec=5\n\
          \n\
+         # Runs after the main process exits for ANY reason — graceful stop,\n\
+         # crash, or `kill -9` (unlike a trap/signal handler inside the core,\n\
+         # systemd itself invokes this, so a SIGKILL cannot skip it). Clears\n\
+         # any nft table/TUN interface the core didn't get to tear down\n\
+         # itself, so a crash never leaves a half-torn-down firewall state\n\
+         # blocking DNS until the user remembers a manual cleanup command.\n\
+         ExecStopPost=-\"{core}\" --cleanup\n\
+         \n\
          [Install]\n\
          WantedBy=default.target\n"
     )
@@ -224,6 +232,16 @@ mod tests {
         assert!(unit.contains(
             "Environment=\"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"\n"
         ));
+    }
+
+    // T8: a crashed or SIGKILLed core must not leave stale nft/TUN state
+    // behind forever. ExecStopPost runs after ANY exit (systemd invokes it
+    // directly, not the dying process), and the leading '-' means a failing
+    // cleanup never blocks the unit from being considered stopped.
+    #[test]
+    fn unit_file_runs_cleanup_on_any_stop() {
+        let unit = generate_unit_file("/usr/bin/whoisthat-core");
+        assert!(unit.contains("ExecStopPost=-\"/usr/bin/whoisthat-core\" --cleanup\n"));
     }
 
     // K-14: the boot unit must order itself before the network comes up and
