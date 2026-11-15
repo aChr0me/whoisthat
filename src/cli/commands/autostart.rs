@@ -28,6 +28,18 @@ pub async fn dispatch(g: &GlobalArgs, cmd: AutostartCmd) -> Result<(), CliError>
             Out::new(g).ok("Autostart disabled.", serde_json::json!({"enabled": false}));
             Ok(())
         }
+        AutostartCmd::BootUnit => {
+            let core = std::path::absolute(crate::core_spawn::find_core_binary())
+                .map_err(|e| CliError::Core(format!("cannot resolve core path: {e}")))?;
+            print!(
+                "{}",
+                crate::systemd::generate_boot_unit_file(
+                    &core.to_string_lossy(),
+                    &crate::config::config_dir()
+                )
+            );
+            Ok(())
+        }
         AutostartCmd::Toggle { backend } => {
             let backend = parse(backend.as_deref())?;
             let status = autostart::toggle(backend).map_err(CliError::Core)?;

@@ -679,6 +679,11 @@ pub enum AutostartCmd {
         #[arg(long, value_name = "BACKEND")]
         backend: Option<String>,
     },
+    /// Print the system unit that arms the kill-switch before the network
+    /// (install: `whoisthat autostart boot-unit | sudo tee
+    /// /etc/systemd/system/whoisthat-killswitch-boot.service`, then
+    /// `sudo systemctl enable whoisthat-killswitch-boot.service`)
+    BootUnit,
 }
 
 #[derive(Debug, Args)]

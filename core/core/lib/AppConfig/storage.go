@@ -240,3 +240,17 @@ func restoreBackupFile() (AppConfig, bool) {
 
 // applyField decodes one top-level key so a single broken field cannot poison
 // the rest of the file.
+
+// LoadForBoot reads and sanitises config.json without touching the
+// filesystem beyond reading it: no HWID generation, no save, no backup refresh.
+// The boot-time arming unit runs as root against a user's config dir and must
+// not rewrite it. A missing file reports State "missing".
+func LoadForBoot() (AppConfig, LoadStatus) {
+	config, status := readConfig()
+	config.DnsServers = sanitizeDnsServers(config.DnsServers)
+	config.TunName = sanitizeTunName(config.TunName)
+	if config.SplitTunnel.Mode == "include" {
+		config.KillSwitchEnabled = false
+	}
+	return config, status
+}

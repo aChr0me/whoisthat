@@ -29,7 +29,7 @@ import (
 	"whoisthat-core/utils"
 )
 
-const usage = "Usage: whoisthat-core\n\nRuns in the foreground and serves the TUI/CLI over IPC.\n"
+const usage = "Usage: whoisthat-core\n       whoisthat-core --arm-boot <config-dir>\n\nRuns in the foreground and serves the TUI/CLI over IPC.\n--arm-boot installs the kill-switch from config.json and exits (boot unit).\n"
 
 // versionLine is a stable contract: install.sh and release.yml parse it.
 func versionLine() string {
@@ -45,6 +45,24 @@ func handleArgs(args []string) (code int, done bool) {
 	switch args[0] {
 	case "--version", "-v", "version":
 		fmt.Print(versionLine())
+		return 0, true
+	case "--arm-boot":
+		// System-unit entry point (K-14): install the armed kill-switch from
+		// the on-disk config before network-pre.target, no session needed.
+		if len(args) != 2 {
+			fmt.Fprintln(os.Stderr, "usage: whoisthat-core --arm-boot <config-dir>")
+			return 2, true
+		}
+		armed, err := armBoot(args[1], tunmode.SetupKillSwitchBlock)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "whoisthat-core: arm-boot:", err)
+			return 1, true
+		}
+		if armed {
+			fmt.Println("kill-switch armed from on-disk config; traffic stays blocked until the core connects")
+		} else {
+			fmt.Println("kill-switch not enabled in config; nothing to arm")
+		}
 		return 0, true
 	case "--help", "-h":
 		fmt.Print(usage)
@@ -257,6 +275,34 @@ func main() {
 		os.Exit(0)
 	}()
 	select {}
+}
+
+// armBoot installs the kill-switch with an empty server allowlist (only DHCP,
+// loopback and the configured resolvers pass) when the on-disk config at
+// configDir has it enabled. The core re-arms with the real server IPs before
+// xray starts. Reports whether it armed.
+func armBoot(configDir string, arm func(ips []string, tunName string, dns []string) error) (bool, error) {
+	if !filepath.IsAbs(configDir) || filepath.Base(filepath.Clean(configDir)) != "whoisthat" {
+		return false, fmt.Errorf("config dir %q must be an absolute path ending in /whoisthat", configDir)
+	}
+	prev, had := os.LookupEnv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", filepath.Dir(filepath.Clean(configDir)))
+	defer func() {
+		if had {
+			os.Setenv("XDG_CONFIG_HOME", prev)
+		} else {
+			os.Unsetenv("XDG_CONFIG_HOME")
+		}
+	}()
+
+	cfg, status := appconfig.LoadForBoot()
+	if status.State == "missing" || !cfg.KillSwitchEnabled {
+		return false, nil
+	}
+	if err := arm(nil, cfg.TunName, cfg.DnsServers); err != nil {
+		return false, fmt.Errorf("arm kill-switch: %w", err)
+	}
+	return true, nil
 }
 
 // runShutdown runs cleanup bounded by timeout so a hung Stop() (stuck
