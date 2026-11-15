@@ -61,3 +61,17 @@ reboot.
 - A test that passes only after a manual `kill-switch=false` is a fail: it means the
   failure path leaks.
 - Happ stays installed the whole time. Removing it is a separate, later decision.
+
+## Ticket 0 result — verified xray install
+
+- Version: `Xray 26.11.9 (Xray, Penetrates Everything.) 676eaf6 (go1.27.3 linux/amd64)`
+- Source: https://github.com/XTLS/Xray-core/releases/download/v26.11.9/Xray-linux-64.zip
+- SHA2-256 (matched the release `.dgst` sidecar): `b651f7e1d9966ee2c1b1ee1bf8b52c72771824d3065dce96bbc8bcc19ed95f82`
+- Installed binary sha256: `e87bce586acdb9136aa5b1f1d9c8db9f1ea1d145b6d86368c7f6f662f9f6a66d`
+  (differs from the zip hash as expected — one is the archive, one the extracted
+  binary; both independently confirmed: `unzip`'s extracted file matches the
+  installed file byte for byte via `sha256sum`).
+- Installed path: `/usr/local/bin/xray`, mode 0755, owner root, 2026-11-15.
+- No system package exists for xray on this box (`pacman -Ss ^xray$` empty); manual
+  install is the only option until one is packaged.
+- Happ's own copy at `/opt/happ/bin/core/xray` (26.10.29) left untouched.
