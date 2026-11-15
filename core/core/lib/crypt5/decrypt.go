@@ -41,9 +41,16 @@ func swapPairs(b []byte) []byte {
 	return out
 }
 
-// b64URL decodes URL-safe base64 without padding, tolerating stray '='.
+// b64URL decodes a base64 payload. Real happy-link redirects carry the
+// standard alphabet (+ and /), not URL-safe; url-safe is the fallback for a
+// differently-minted panel. Padding is trimmed first since the digit-length
+// framing can leave stray '=' at a boundary.
 func b64URL(b []byte) ([]byte, error) {
-	return base64.RawURLEncoding.DecodeString(strings.TrimRight(string(b), "="))
+	s := strings.TrimRight(string(b), "=")
+	if out, err := base64.RawStdEncoding.DecodeString(s); err == nil {
+		return out, nil
+	}
+	return base64.RawURLEncoding.DecodeString(s)
 }
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }

@@ -64,6 +64,24 @@ func handleArgs(args []string) (code int, done bool) {
 			fmt.Println("kill-switch not enabled in config; nothing to arm")
 		}
 		return 0, true
+	case "--cleanup":
+		// One-shot self-heal, no daemon needed: clears any firewall/routing
+		// state left behind by a killed/crashed core (T8). Safe to run any
+		// time; refuses if a live core still owns the socket so it never
+		// nukes a running instance's rules. Meant to be called directly
+		// (recovery docs, a systemd ExecStopPost, or an Omarchy widget
+		// "fix my network" button) without starting the full daemon.
+		appconfig.LoadConfig()
+		if utils.SocketIsLive(appconfig.SocketPath()) {
+			fmt.Fprintln(os.Stderr, "whoisthat-core: a core is still running; stop it first")
+			return 1, true
+		}
+		if err := tunmode.ReconcileOrphanedRules(appconfig.GetConfig().TunName); err != nil {
+			fmt.Fprintln(os.Stderr, "whoisthat-core: cleanup:", err)
+			return 1, true
+		}
+		fmt.Println("orphaned firewall/routing rules cleared")
+		return 0, true
 	case "--help", "-h":
 		fmt.Print(usage)
 		return 0, true

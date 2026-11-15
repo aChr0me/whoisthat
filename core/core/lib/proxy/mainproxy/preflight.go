@@ -113,7 +113,7 @@ func validateXrayConfig(cfg []byte, assetDir string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), xrayPreflightTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, bin, "run", "-test")
+	cmd := exec.CommandContext(ctx, bin, "run", "-test", "-format=json", "-c", "/dev/stdin")
 	if caps := xrayTestAmbientCaps(); len(caps) > 0 {
 		cmd.SysProcAttr = &syscall.SysProcAttr{AmbientCaps: caps}
 	}

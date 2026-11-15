@@ -48,7 +48,10 @@ transport kept it encoded — see "transport" below).
 10. `plaintext = url_safe_b64_decode(swap_pairs(intermediate))` — the subscription or
     redirect URL, UTF-8.
 
-Base64 in the payload is **URL-safe without padding**; the reference strips stray `=`
+Base64 in the payload is the **standard alphabet (`+`/`/`) without padding**,
+confirmed against a live happy-link redirect (its payload carries literal `+`
+and `/`); url-safe is kept only as a decode fallback for a differently-minted
+panel. The reference strips stray `=`
 before decoding. RSA chunks are standard base64.
 
 ## Transport notes

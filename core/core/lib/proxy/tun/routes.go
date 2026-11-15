@@ -260,11 +260,16 @@ ip route del default via %s table 100 2>/dev/null || true
 }
 
 func addFwmarkRouting6(mark int, iface string, gateway6 string) error {
+	// The default route line always carries `dev %[3]s`: an IPv6 gateway from
+	// router advertisements is almost always link-local (fe80::...), and the
+	// kernel refuses `route add default via <link-local>` with "Egress device
+	// not specified" unless the device is given explicitly. A global gateway
+	// accepts the same flag as a no-op, so this is safe either way.
 	script := fmt.Sprintf(`
 set -e
 ip -6 rule add fwmark %d table 100 2>/dev/null || true
 ip -6 route replace %s/128 dev %s table 100
-ip -6 route replace default via %s table 100
+ip -6 route replace default via %s dev %[3]s table 100
 `, mark, gateway6, iface, gateway6)
 	_, err := runScriptWithSh(script)
 	return err
@@ -274,7 +279,7 @@ func removeFwmarkRouting6(mark int, iface string, gateway6 string) error {
 	script := fmt.Sprintf(`
 ip -6 rule del fwmark %d table 100 2>/dev/null || true
 ip -6 route del %s/128 dev %s table 100 2>/dev/null || true
-ip -6 route del default via %s table 100 2>/dev/null || true
+ip -6 route del default via %s dev %[3]s table 100 2>/dev/null || true
 `, mark, gateway6, iface, gateway6)
 	_, err := runScriptWithSh(script)
 	return err
