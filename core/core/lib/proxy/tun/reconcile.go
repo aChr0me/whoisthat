@@ -45,6 +45,16 @@ for IPT in iptables ip6tables; do
     "$IPT" -X WHOISTHAT_KS 2>/dev/null || true
 done
 
+# --- iptables conntrack-bypass chains (legacy backend) ---
+for IPT in iptables ip6tables; do
+    while "$IPT" -t mangle -D PREROUTING -j WHOISTHAT_MANGLE_PRE 2>/dev/null; do :; done
+    while "$IPT" -t mangle -D OUTPUT -j WHOISTHAT_MANGLE_OUT 2>/dev/null; do :; done
+    "$IPT" -t mangle -F WHOISTHAT_MANGLE_PRE 2>/dev/null || true
+    "$IPT" -t mangle -F WHOISTHAT_MANGLE_OUT 2>/dev/null || true
+    "$IPT" -t mangle -X WHOISTHAT_MANGLE_PRE 2>/dev/null || true
+    "$IPT" -t mangle -X WHOISTHAT_MANGLE_OUT 2>/dev/null || true
+done
+
 # --- iptables DNS hijack chains (legacy backend) ---
 for IPT in iptables ip6tables; do
     "$IPT" -t nat -D OUTPUT -j WHOISTHAT_DNS_OUT 2>/dev/null || true

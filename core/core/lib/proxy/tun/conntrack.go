@@ -16,32 +16,50 @@ func setupConntrackRules(tun_name string, def_iface string) error {
 }
 
 func setupConntrackRulesIptables(tun_name string, def_iface string) error {
-	// Mirror of setupConntrackRulesNftables on the iptables/mangle backend; see
-	// that function for the full rationale. The mangle OUTPUT chain is a route
-	// hook, so `-j MARK` reroutes locally-generated replies; for forwarded
-	// (Docker) replies the mark is applied in PREROUTING before the forward
-	// routing decision.
-	//
-	// `--ctdir REPLY` restricts the mark copy to reply-direction packets so the
-	// inbound/original direction (incl. packets DNAT'd into a container) is not
-	// misrouted. The conditional `-m connmark --mark 1` (not
-	// `CONNMARK --restore-mark`) avoids clobbering xray's SO_MARK=1.
-	script := fmt.Sprintf(`
+	_, err := runScriptWithSh(buildConntrackIptablesScript(tun_name, def_iface))
+	return err
+}
+
+// buildConntrackIptablesScript mirrors setupConntrackRulesNftables on the
+// iptables/mangle backend; see that function for the full rationale. The mangle
+// OUTPUT chain is a route hook, so `-j MARK` reroutes locally-generated
+// replies; for forwarded (Docker) replies the mark is applied in PREROUTING
+// before the forward routing decision.
+//
+// The rules live in dedicated chains (WHOISTHAT_MANGLE_PRE/OUT) so cleanup can
+// remove them by name, independent of the interface that was default when they
+// were installed (K-7).
+//
+// `--ctdir REPLY` restricts the mark copy to reply-direction packets so the
+// inbound/original direction (incl. packets DNAT'd into a container) is not
+// misrouted. The conditional `-m connmark --mark 1` (not
+// `CONNMARK --restore-mark`) avoids clobbering xray's SO_MARK=1.
+func buildConntrackIptablesScript(tun_name string, def_iface string) string {
+	return fmt.Sprintf(`
 set -e
 TUN_NAME="%s"
 DEF_IFACE="%s"
 
 for IPT in iptables ip6tables; do
-  "$IPT" -t mangle -A PREROUTING -i "$DEF_IFACE" \
+  "$IPT" -t mangle -D PREROUTING -j WHOISTHAT_MANGLE_PRE 2>/dev/null || true
+  "$IPT" -t mangle -D OUTPUT -j WHOISTHAT_MANGLE_OUT 2>/dev/null || true
+  "$IPT" -t mangle -F WHOISTHAT_MANGLE_PRE 2>/dev/null || true
+  "$IPT" -t mangle -F WHOISTHAT_MANGLE_OUT 2>/dev/null || true
+  "$IPT" -t mangle -X WHOISTHAT_MANGLE_PRE 2>/dev/null || true
+  "$IPT" -t mangle -X WHOISTHAT_MANGLE_OUT 2>/dev/null || true
+
+  "$IPT" -t mangle -N WHOISTHAT_MANGLE_PRE
+  "$IPT" -t mangle -N WHOISTHAT_MANGLE_OUT
+  "$IPT" -t mangle -A WHOISTHAT_MANGLE_PRE -i "$DEF_IFACE" \
     -m conntrack --ctstate NEW -j CONNMARK --set-mark 1
-  "$IPT" -t mangle -A PREROUTING \
+  "$IPT" -t mangle -A WHOISTHAT_MANGLE_PRE \
     -m conntrack --ctdir REPLY -m connmark --mark 1 -j MARK --set-mark 1
-  "$IPT" -t mangle -A OUTPUT \
+  "$IPT" -t mangle -A WHOISTHAT_MANGLE_OUT \
     -m conntrack --ctdir REPLY -m connmark --mark 1 -j MARK --set-mark 1
+  "$IPT" -t mangle -I PREROUTING 1 -j WHOISTHAT_MANGLE_PRE
+  "$IPT" -t mangle -I OUTPUT 1 -j WHOISTHAT_MANGLE_OUT
 done
 `, tun_name, def_iface)
-	_, err := runScriptWithSh(script)
-	return err
 }
 
 func setupConntrackRulesNftables(tun_name string, def_iface string) error {
@@ -113,45 +131,30 @@ nft add rule ip6 whoisthat_mangle output \
 	return err
 }
 
-func cleanConntrackRules(tun_name string, def_iface string) error {
-	switch probeFirewall() {
-	case firewallNftables:
-		return cleanConntrackRulesNftables()
-	default:
-		return cleanConntrackRulesIptables(tun_name, def_iface)
-	}
-}
-
-func cleanConntrackRulesIptables(tun_name string, def_iface string) error {
-	script := fmt.Sprintf(`
-DEF_IFACE="%s"
-
-delete_all() {
-    local ipt=$1
-    shift
-    while "$ipt" -t mangle -C "$@" 2>/dev/null; do
-        "$ipt" -t mangle -D "$@"
-    done
-}
-
-for IPT in iptables ip6tables; do
-    delete_all "$IPT" PREROUTING -i "$DEF_IFACE" \
-      -m conntrack --ctstate NEW -j CONNMARK --set-mark 1
-    delete_all "$IPT" PREROUTING \
-      -m conntrack --ctdir REPLY -m connmark --mark 1 -j MARK --set-mark 1
-    delete_all "$IPT" OUTPUT \
-      -m conntrack --ctdir REPLY -m connmark --mark 1 -j MARK --set-mark 1
-done
-`, def_iface)
-	_, err := runScriptWithSh(script)
+// RemoveConntrackBypass removes every conntrack-bypass artifact by name: the
+// nft whoisthat_mangle tables and the iptables WHOISTHAT_MANGLE_* chains. It
+// never consults the current default interface and covers both backends, so it
+// is safe on any shutdown path and for state left by a different session (K-7).
+func RemoveConntrackBypass() error {
+	_, err := runScriptWithSh(buildConntrackCleanupScript())
 	return err
 }
 
-func cleanConntrackRulesNftables() error {
-	_, err := runScriptWithSh(`
+func cleanConntrackRules() error { return RemoveConntrackBypass() }
+
+// buildConntrackCleanupScript is idempotent: every command tolerates absence.
+func buildConntrackCleanupScript() string {
+	return `
 nft delete table inet whoisthat_mangle 2>/dev/null || true
 nft delete table ip whoisthat_mangle 2>/dev/null || true
 nft delete table ip6 whoisthat_mangle 2>/dev/null || true
-`)
-	return err
+for IPT in iptables ip6tables; do
+    while "$IPT" -t mangle -D PREROUTING -j WHOISTHAT_MANGLE_PRE 2>/dev/null; do :; done
+    while "$IPT" -t mangle -D OUTPUT -j WHOISTHAT_MANGLE_OUT 2>/dev/null; do :; done
+    "$IPT" -t mangle -F WHOISTHAT_MANGLE_PRE 2>/dev/null || true
+    "$IPT" -t mangle -F WHOISTHAT_MANGLE_OUT 2>/dev/null || true
+    "$IPT" -t mangle -X WHOISTHAT_MANGLE_PRE 2>/dev/null || true
+    "$IPT" -t mangle -X WHOISTHAT_MANGLE_OUT 2>/dev/null || true
+done
+`
 }

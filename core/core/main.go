@@ -235,8 +235,7 @@ func main() {
 		// firewall teardown) can't wedge shutdown forever. If cleanup
 		// doesn't finish in 10s, exit anyway — the startup reconcile on the
 		// next launch will tear down any leftover rules.
-		done := make(chan struct{})
-		go func() {
+		runShutdown(func() {
 			// The kill-switch block is deliberately not removed here: when it
 			// is enabled it must survive a stopped daemon. It is removed only
 			// by an explicit kill-switch=false or the startup reconcile.
@@ -244,18 +243,38 @@ func main() {
 			tun_manager.Stop()
 			os.Remove(appconfig.SocketPath())
 			server.Broadcast(lib.CreateJsonNotification("warn", structs.Warning{Key: "died", Content: reason}))
-			close(done)
-		}()
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			logger.Warn("shutdown: cleanup timed out after 10s, exiting anyway")
+		}, 10*time.Second, func() {
 			os.Remove(appconfig.SocketPath())
-		}
+			// K-7: by table name, whatever state TUN was in and even when the
+			// bounded cleanup above hung or never ran.
+			if !testMode() {
+				if err := tunmode.RemoveConntrackBypass(); err != nil {
+					logger.Warnf("shutdown: conntrack cleanup: %v", err)
+				}
+			}
+		})
 		releaseActiveUser()
 		os.Exit(0)
 	}()
 	select {}
+}
+
+// runShutdown runs cleanup bounded by timeout so a hung Stop() (stuck
+// subprocess kill, blocked firewall teardown) cannot wedge shutdown, then
+// always runs final. If cleanup doesn't finish in time it is abandoned — the
+// startup reconcile on the next launch tears down anything left.
+func runShutdown(cleanup func(), timeout time.Duration, final func()) {
+	done := make(chan struct{})
+	go func() {
+		cleanup()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(timeout):
+		logger.Warn("shutdown: cleanup timed out, exiting anyway")
+	}
+	final()
 }
 
 // instanceLock stays open for the lifetime of the process. Closing it (or

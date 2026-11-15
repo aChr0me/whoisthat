@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"testing"
+	"time"
 )
 
 func TestAcquireInstanceLock(t *testing.T) {
@@ -68,5 +69,26 @@ func TestVersionLineFormat(t *testing.T) {
 	pattern := regexp.MustCompile(`^whoisthat-core v\d+\.\d+\.\d+ \(protocol \d+\)\n$`)
 	if !pattern.MatchString(versionLine()) {
 		t.Fatalf("versionLine() = %q does not match %s", versionLine(), pattern)
+	}
+}
+
+// K-7: the by-name conntrack cleanup must run on every shutdown path, also
+// when the bounded cleanup hangs and is abandoned.
+func TestShutdownRunsFinalCleanupAfterCompletedCleanup(t *testing.T) {
+	var order []string
+	runShutdown(func() { order = append(order, "cleanup") }, time.Second,
+		func() { order = append(order, "final") })
+	if len(order) != 2 || order[0] != "cleanup" || order[1] != "final" {
+		t.Fatalf("order = %v", order)
+	}
+}
+
+func TestShutdownRunsFinalCleanupWhenCleanupHangs(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	finalRan := false
+	runShutdown(func() { <-release }, 20*time.Millisecond, func() { finalRan = true })
+	if !finalRan {
+		t.Fatal("final cleanup skipped after the bounded cleanup timed out")
 	}
 }

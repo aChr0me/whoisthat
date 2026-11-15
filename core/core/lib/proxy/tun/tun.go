@@ -265,7 +265,7 @@ func (t *TunModeManager) clearNetworkRules() error {
 		deleteProxyIpRoutes(t.proxy_ipv4s, t.proxy_ipv6s, t.default_interface_ip, t.default_interface_ipv6),
 		removeFwmarkRouting(1, t.default_interface, t.default_interface_ip),
 		removeFwmarkRouting6(1, t.default_interface, t.default_interface_ipv6),
-		cleanConntrackRules(t.tun_name, t.default_interface),
+		cleanConntrackRules(),
 		t.removeSplitRules(),
 		revertResolvectlDns(t.tun_name),
 	}
