@@ -116,3 +116,47 @@ func TestDnsHijackForManualModeUsesLegacy(t *testing.T) {
 		t.Errorf("manual routing must use the legacy hijack: %+v", plan)
 	}
 }
+
+// K-4: allowlisted resolvers must stay out of the port-53 DNAT in every
+// strategy, otherwise they are redirected to the sink and blackhole when the
+// core dies.
+func TestDnsHijackForExcludesAllowlistedResolvers(t *testing.T) {
+	cmd, _, _ := newTestCmd(t)
+	want := appconfig.GetConfig().DnsServers
+	if len(want) == 0 {
+		t.Fatal("test needs default dns servers")
+	}
+
+	group, err := cmd.DB.AddGroup("K4Group", "")
+	if err != nil {
+		t.Fatalf("AddGroup failed: %v", err)
+	}
+	rp := structs.RoutingProfile{
+		Id: "k4", GroupId: group.Id, Name: "K4", Source: "happ", State: "ready",
+		Rules: []structs.RoutingRule{{Type: "field", Domain: "example.com", OutboundTag: "direct", Enabled: true}},
+		DNS:   &structs.HappDNSConfig{RemoteDNSType: "DoU", RemoteDNSIP: "1.1.1.1"},
+	}
+	if err := cmd.DB.SaveRoutingProfile(rp); err != nil {
+		t.Fatalf("SaveRoutingProfile failed: %v", err)
+	}
+	if err := cmd.DB.SetActiveRoutingProfile(group.Id, rp.Id); err != nil {
+		t.Fatalf("SetActiveRoutingProfile failed: %v", err)
+	}
+
+	cases := map[string]tunmode.DnsHijack{
+		"managed": cmd.dnsHijackFor(structs.Profile{GroupId: 99, Managed: true}),
+		"happ":    cmd.dnsHijackFor(structs.Profile{GroupId: group.Id}),
+		"legacy":  cmd.dnsHijackFor(structs.Profile{GroupId: 0}),
+	}
+	for name, plan := range cases {
+		got := map[string]bool{}
+		for _, ip := range plan.Exclude {
+			got[ip] = true
+		}
+		for _, w := range want {
+			if !got[w] {
+				t.Errorf("%s plan: resolver %s missing from Exclude %v", name, w, plan.Exclude)
+			}
+		}
+	}
+}

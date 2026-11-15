@@ -84,12 +84,14 @@ func pickDns(dnsServers []string) (dns4, dns6 string) {
 // Happ profiles with DNS use the reserved sink inside TUN, except in include
 // split mode where the hijack must stay disabled.
 func (cmd *Cmd) dnsHijackFor(profile structs.Profile) tunmode.DnsHijack {
-	dns4, dns6 := pickDns(appconfig.GetConfig().DnsServers)
+	resolvers := append([]string(nil), appconfig.GetConfig().DnsServers...)
+	dns4, dns6 := pickDns(resolvers)
 	legacy := tunmode.DnsHijack{
 		Enabled: true,
 		Legacy:  true,
 		Sink4:   dns4,
 		Sink6:   dns6,
+		Exclude: resolvers,
 	}
 
 	// JSON-subscription profiles always carry (or receive) an Xray DNS
@@ -101,6 +103,9 @@ func (cmd *Cmd) dnsHijackFor(profile structs.Profile) tunmode.DnsHijack {
 			Sink4:     tunmode.DNSSink4,
 			Sink6:     tunmode.DNSSink6,
 			ScopeMark: 1,
+			// K-4: allowlisted resolvers stay out of the sink DNAT so they
+			// still answer when the core is gone.
+			Exclude: resolvers,
 		}
 	}
 
@@ -122,6 +127,7 @@ func (cmd *Cmd) dnsHijackFor(profile structs.Profile) tunmode.DnsHijack {
 		Sink4:     tunmode.DNSSink4,
 		Sink6:     tunmode.DNSSink6,
 		ScopeMark: 1,
+		Exclude:   resolvers,
 	}
 }
 
