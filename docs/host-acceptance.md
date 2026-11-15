@@ -12,10 +12,10 @@ only on the user's go-ahead. `docs/PLAN.md` marks them host-acceptance-pending.
 3. `sudo -v` first (this box gates sudo on a fingerprint; an unattended `sudo` inside a
    test will otherwise time out mid-way).
 4. Arm-time safety net on every arming test:
-   `( sleep 90; whoisthat kill-switch off ) &` — a crashed run cannot strand the box
+   `( sleep 90; whoisthat settings set kill-switch=false --force ) &` — a crashed run cannot strand the box
    offline.
 5. Known recovery lines, rehearsed before the first arm:
-   `whoisthat kill-switch off` → `nft delete table inet whoisthat_ks` →
+   `whoisthat settings set kill-switch=false --force` → `nft delete table inet whoisthat_ks` →
    `systemctl --user restart NetworkManager` → router/`happd` untouched.
 
 ## Suites first, one shell, in this order
@@ -33,7 +33,7 @@ regardless of what the cloud reports.
 Arm with the default resolvers, then `dig @<allowlisted resolver> example.org +short`
 and `getent hosts example.org`. Then `kill -9` the core and repeat both. DNS must answer
 in all three states; the failure this closes was a hard blackhole after `-9`.
-Rollback: `whoisthat kill-switch off`.
+Rollback: `whoisthat settings set kill-switch=false --force`.
 
 ## T7 — rotation re-arm
 
@@ -58,6 +58,6 @@ reboot.
 
 - Record each result in the ticket's section here, with the command output pasted, not a
   verdict word.
-- A test that passes only after a manual `kill-switch off` is a fail: it means the
+- A test that passes only after a manual `kill-switch=false` is a fail: it means the
   failure path leaks.
 - Happ stays installed the whole time. Removing it is a separate, later decision.

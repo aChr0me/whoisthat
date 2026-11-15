@@ -14,7 +14,7 @@ CI without the user's explicit go-ahead.
    keeps its address and route for the whole effort. whoisthat runs its own xray on
    its own TUN name; no `Happ.conf` edits, no happd socket calls.
 2. **Never arm the kill switch blind.** Development happens unarmed. Every arming
-   test pre-schedules its own disarm (`(sleep 90; whoisthat kill-switch off) &`) so a
+   test pre-schedules its own disarm (`(sleep 90; whoisthat settings set kill-switch=false --force) &`) so a
    crash can't strand the box offline. `sudo -v` before any test that needs nft.
 3. **Sub credentials never reach a repo or a log.** URL from env
    (`WHOISTHAT_TEST_SUB`), fixed test HWID, bodies cached to disk and replayed.
@@ -169,8 +169,8 @@ Anything the implementer claims without a diff hunk gets sent back.
 ## Rollback
 
 Per patch: `git revert`. Whole effort: remove the fork; Happ was never modified, so
-`happd` and `happ-xray` are still the working path. Live machine: `whoisthat
-kill-switch off` (switch), `nft delete table inet whoisthat_ks` (last resort),
+`happd` and `happ-xray` are still the working path. Live machine: `whoisthat settings set
+kill-switch=false --force` (switch), `nft delete table inet whoisthat_ks` (last resort),
 `systemctl --user disable --now whoisthat-core`.
 
 ## Definition of done
