@@ -266,6 +266,9 @@ var subClient = &http.Client{
 	CheckRedirect: subscriptionCheckRedirect,
 }
 
+// happFetcher resolves Happ crypt5 links; tests replace it.
+var happFetcher = newHappResolver()
+
 // requireHTTPSSubscription rejects every scheme except https (and http to a
 // loopback host, which never leaves the machine).
 func requireHTTPSSubscription(raw string) error {
@@ -298,6 +301,17 @@ func subscriptionCheckRedirect(req *http.Request, via []*http.Request) error {
 // server keeps its own provider-owned routing. When that endpoint is missing or
 // does not return Xray configurations, the regular share-link list is used.
 func fetchSubscription(group structs.Group) (string, *http.Response, bool, error) {
+	// Happ links never reach the plain paths below: a failed resolve is an error,
+	// not a cue to fetch the link (or its /json twin) as an ordinary subscription.
+	if isHappLink(group.SubscriptionUrl) {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*subClient.Timeout)
+		defer cancel()
+		body, resp, err := happFetcher.resolve(ctx, group.SubscriptionUrl)
+		if err != nil {
+			return "", nil, false, err
+		}
+		return body, resp, true, nil
+	}
 	if jsonURL, ok := subscriptionJSONURL(group.SubscriptionUrl); ok {
 		if body, resp, err := fetchSubscriptionURL(jsonURL); err == nil && xrayjson.IsConfigBody([]byte(body)) {
 			logger.Debugf("update-subscription: using JSON format %s", redactSecret(jsonURL))

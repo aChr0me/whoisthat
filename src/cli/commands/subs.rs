@@ -134,11 +134,7 @@ pub async fn add(
     name: Option<&str>,
     no_wait: bool,
 ) -> Result<(), CliError> {
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err(CliError::Usage(
-            "subscription URL must start with http:// or https://".into(),
-        ));
-    }
+    check_subscription_url(url)?;
     let out = Out::new(g);
     let mut session = Session::open_or_spawn(g).await?;
     // Without an explicit name the core uses profile-title from the
@@ -376,11 +372,7 @@ pub async fn url(
     let group = resolve::find_group(&state.groups, selector)?.clone();
 
     if let Some(new_url) = set {
-        if !new_url.starts_with("http://") && !new_url.starts_with("https://") {
-            return Err(CliError::Usage(
-                "subscription URL must start with http:// or https://".into(),
-            ));
-        }
+        check_subscription_url(new_url)?;
         let updated: Group = session
             .request(
                 "update-group",
@@ -535,6 +527,21 @@ async fn patch_group(
     Ok(updated)
 }
 
+/// Accepts http(s) URLs and Happ `happ://crypt5/<payload>` markers; the core
+/// resolves the latter (and `…/happy-link/<id>` URLs) through the crypt5 path.
+fn check_subscription_url(url: &str) -> Result<(), CliError> {
+    let lower = url.trim().to_ascii_lowercase();
+    if lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("happ://crypt5/")
+    {
+        return Ok(());
+    }
+    Err(CliError::Usage(
+        "subscription URL must start with http://, https:// or happ://crypt5/".into(),
+    ))
+}
+
 fn effective_interval(group: &Group) -> i64 {
     if group.sub_update_interval_override > 0 {
         group.sub_update_interval_override
@@ -606,4 +613,28 @@ fn group_json(
         "active": active,
         "routing_profiles": group.routing_profiles,
     })
+}
+
+#[cfg(test)]
+mod url_tests {
+    use super::check_subscription_url;
+
+    #[test]
+    fn accepts_http_https_and_crypt5_markers() {
+        for ok in [
+            "https://panel.example/happy-link/abc",
+            "http://127.0.0.1/sub",
+            "happ://crypt5/abcdefgh",
+            "HAPP://Crypt5/abcdefgh",
+        ] {
+            assert!(check_subscription_url(ok).is_ok(), "{ok}");
+        }
+    }
+
+    #[test]
+    fn rejects_other_schemes() {
+        for bad in ["happ://routing/off", "ftp://x/y", "vless://x", "panel.example/sub"] {
+            assert!(check_subscription_url(bad).is_err(), "{bad}");
+        }
+    }
 }

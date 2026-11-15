@@ -2,9 +2,8 @@
 // fetcher: recognising the happ://crypt5/<payload> marker, following the
 // happy-link redirect chain to it over https, and refusing non-config bodies.
 //
-// Deliberately NOT here: the AEAD unwrap and its key table. The byte layout of
-// the payload and the keys are not in this repository and must come from a
-// confirmed capture, not from guesswork.
+// The AEAD unwrap lives in decrypt.go and the vendored key table in
+// keys_table.go; commands/happ_crypt5.go wires them into the subscription fetch.
 package crypt5
 
 import (
