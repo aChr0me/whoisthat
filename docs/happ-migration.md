@@ -19,7 +19,7 @@ Be clear about what is and is not proven before relying on it.
 | Area | State |
 |---|---|
 | Kill-switch fixes K-1…K-7, K-14 | Code and hermetic tests done. The behaviour that needs a real kernel, TUN device or reboot (DHCP traversal, resolver answering while armed, live proxy-IP rotation, boot ordering) is **host-acceptance pending**: see [host acceptance](/host-acceptance). |
-| crypt5 links (`happ://crypt5/…`) | Marker parser, redirect chain and AEAD decrypt exist. `whoisthat sub add <happy-link>` does **not** resolve crypt5 yet, and the key table is not vendored, so no real link decrypts today. Until that lands, add a subscription whose URL is a plain config body. |
+| crypt5 links (`happ://crypt5/…`) | Marker parser, redirect chain and AEAD decrypt exist. `whoisthat sub add <happy-link>` does **not** resolve crypt5 yet: the 36-marker key table is vendored (`core/core/lib/crypt5/keys_table.go`), but nothing calls the decryptor from the subscription path, so no real link decrypts today. Until that is wired, add a subscription whose URL is a plain config body. |
 | Happ itself | Never modified. `happd.service` and `happ-xray` keep their address and route. |
 
 ## What changes for you
@@ -32,10 +32,10 @@ Be clear about what is and is not proven before relying on it.
   The rules survive `whoisthat core stop` on purpose.
 - **Allowlisted resolvers keep working.** Port-53 traffic to the configured
   `dns-servers` is excluded from the DNS redirect, so those resolvers still
-  answer if the core dies (K-4).
+  answer if the core dies (K-4; hermetically tested, not yet proven on a host).
 - **The kill-switch follows server IP changes.** If the server's address
   rotates while connected, the allowlist is re-armed in one atomic step, with no
-  reconnect (K-5).
+  reconnect (K-5; hermetically tested, live rotation not yet proven on a host).
 - **Reboots can be covered.** The optional boot unit arms the switch before the
   network comes up (K-14, below). Without it, the switch re-arms when the core
   starts in your session.
