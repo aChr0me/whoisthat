@@ -50,8 +50,8 @@ func probeFirewall() firewallBackend {
 
 func runScriptWithSh(script string) (string, error) {
 	cmd := utils.SafeCommand("sh")
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
+	if caps := utils.HeldCapabilities(unix.CAP_NET_ADMIN, unix.CAP_NET_RAW); len(caps) > 0 {
+		cmd.SysProcAttr = &syscall.SysProcAttr{AmbientCaps: caps}
 	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -82,8 +82,8 @@ func runScriptWithSh(script string) (string, error) {
 func runCommandWithCaps(name string, args ...string) (string, error) {
 	cmd := utils.SafeCommand(name, args...)
 	cmd.Env = append(cmd.Env, "LC_ALL=C")
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		AmbientCaps: []uintptr{unix.CAP_NET_ADMIN, unix.CAP_NET_RAW},
+	if caps := utils.HeldCapabilities(unix.CAP_NET_ADMIN, unix.CAP_NET_RAW); len(caps) > 0 {
+		cmd.SysProcAttr = &syscall.SysProcAttr{AmbientCaps: caps}
 	}
 	out, err := cmd.CombinedOutput()
 	return string(out), err
