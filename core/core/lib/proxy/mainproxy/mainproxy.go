@@ -453,7 +453,8 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 
 	// Spawn a single Exited-watcher for this core instance. The done
 	// channel lets the next Connect (or Stop) retire it cleanly.
-	p.startExitWatcher()
+	done := p.startExitWatcher()
+	go p.watchRotation(done)
 
 	return nil
 }
