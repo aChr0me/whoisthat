@@ -112,6 +112,8 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 		return fmt.Errorf("failed to start xray: %w", err)
 	}
 
+	reapOrphanXray(xraybin)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd, err := xrayCommand(ctx, xraybin, "run")
 	if err != nil {
@@ -125,9 +127,12 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 		return fmt.Errorf("failed to get stdin %w", err)
 	}
 
+	// xray prints its fatal "Failed to start: ..." on stdout, so capture both
+	// streams; stderr alone only carries "Using config from STDIN".
 	cmd.Stdout = nil
 	xrayLog, err := os.CreateTemp("", "whoisthat-xray-*.log")
 	if err == nil {
+		cmd.Stdout = xrayLog
 		cmd.Stderr = xrayLog
 	} else {
 		xrayLog = nil
@@ -210,9 +215,9 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 			name := xrayLog.Name()
 			if failedUnexpectedly(ctx.Err(), err) {
 				logger.Errorf("xray exited with error: %v", err)
-				if tail := crashTail(name, 4096); tail != "" {
+				if tail := crashTail(name, 16384); tail != "" {
 					// One line keeps the level tag/parse target intact.
-					logger.Errorf("xray stderr: %s", strings.ReplaceAll(tail, "\n", " | "))
+					logger.Errorf("xray output: %s", strings.ReplaceAll(tail, "\n", " | "))
 				}
 			}
 			_ = os.Remove(name)
@@ -260,7 +265,7 @@ func (x *XrayCore) Stop() {
 	if waitDone != nil {
 		select {
 		case <-waitDone:
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(3 * time.Second):
 			logger.Warn("xray stop: timed out waiting for process to exit")
 		}
 	}
