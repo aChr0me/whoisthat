@@ -52,8 +52,15 @@ gw=$(ip -4 route show default | awk 'NR==1{for(i=1;i<=NF;i++) if($i=="via") prin
 dev=$(ip -4 route show default | awk 'NR==1{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}')
 api_ip=$(getent ahostsv4 "$API" | awk 'NR==1{print $1}')
 if [ -n "$gw" ] && [ -n "$dev" ] && [ -n "$api_ip" ]; then
-  sudo -n ip -4 route replace "$api_ip/32" via "$gw" dev "$dev" \
-    || echo "warn: could not add host route for $API" >&2
+  if ip -4 route show | grep -q "^$api_ip "; then
+    step "host route for $API already present"
+  else
+    # Detached, sudo never has a cached ticket; pkexec reaches the polkit
+    # agent instead and is bounded so it cannot hang the cycle.
+    sudo -n ip -4 route replace "$api_ip/32" via "$gw" dev "$dev" 2>/dev/null \
+      || timeout 25 pkexec ip -4 route replace "$api_ip/32" via "$gw" dev "$dev" 2>/dev/null \
+      || echo "warn: no host route for $API, agent channel may drop on the flip" >&2
+  fi
 else
   echo "warn: no default route parsed, skipping host route" >&2
 fi
