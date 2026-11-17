@@ -92,3 +92,32 @@ func TestDoTNoopWithoutResolvedOrTun(t *testing.T) {
 		t.Fatalf("restore with nothing recorded: %v", err)
 	}
 }
+
+func TestDoTDeferredUntilTunDeviceExists(t *testing.T) {
+	f := &fakeResolvectl{present: true, value: "yes"}
+	f.install(t)
+	real := resolvectlRun
+	up := false
+	resolvectlRun = func(args ...string) (string, error) {
+		if !up {
+			return "Failed to resolve interface \"wittun\": No such device\n", fmt.Errorf("exit status 1")
+		}
+		return real(args...)
+	}
+	if err := neutraliseDoT("wittun"); err != nil {
+		t.Fatalf("arming before the device exists must not fail: %v", err)
+	}
+	if err := ReconcileDoT(); err != nil { // still absent: stays pending, not an error
+		t.Fatalf("reconcile while absent: %v", err)
+	}
+	up = true
+	if err := ReconcileDoT(); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if f.value != "no" {
+		t.Fatalf("dnsovertls = %q after reconcile, want no", f.value)
+	}
+	if err := restoreDoT(); err != nil || f.value != "yes" {
+		t.Fatalf("restore: err=%v value=%q", err, f.value)
+	}
+}

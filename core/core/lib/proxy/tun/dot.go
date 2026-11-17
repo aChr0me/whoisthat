@@ -24,12 +24,21 @@ var (
 	dotLink  string
 	dotPrior string
 	dotSaved bool
+	// dotPending: arming ran before the TUN device existed, so the link's DoT
+	// state could not be read yet. ReconcileDoT finishes the job once it is up.
+	dotPending string
 )
 
 func resetDoTState() {
 	dotMu.Lock()
 	defer dotMu.Unlock()
 	dotLink, dotPrior, dotSaved = "", "", false
+	dotPending = ""
+}
+
+// isNoSuchDevice reports resolvectl's answer for a link that does not exist yet.
+func isNoSuchDevice(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "No such device")
 }
 
 // readDoT returns the link's current dnsovertls value (`Link 7 (x): yes`).
@@ -58,9 +67,16 @@ func neutraliseDoT(tunName string) error {
 	defer dotMu.Unlock()
 
 	prior, err := readDoT(tunName)
+	if isNoSuchDevice(err) {
+		// The TUN device is created later in the connect (tunmode Start). Arming
+		// stays fail-closed regardless; DoT is neutralised on device creation.
+		dotPending = tunName
+		return nil
+	}
 	if err != nil {
 		return fmt.Errorf("kill-switch not armed: cannot read DNS-over-TLS state: %w", err)
 	}
+	dotPending = ""
 	if !dotSaved { // keep the first-seen value across repeated arms
 		dotLink, dotPrior, dotSaved = tunName, prior, true
 	}
@@ -86,4 +102,17 @@ func restoreDoT() error {
 	}
 	dotLink, dotPrior, dotSaved = "", "", false
 	return nil
+}
+
+// ReconcileDoT completes a neutralisation deferred because the TUN device did
+// not exist at arm time. Call it right after the device is created. No-op when
+// nothing is pending; an error means DNS over the tunnel would be blackholed.
+func ReconcileDoT() error {
+	dotMu.Lock()
+	name := dotPending
+	dotMu.Unlock()
+	if name == "" {
+		return nil
+	}
+	return neutraliseDoT(name)
 }
