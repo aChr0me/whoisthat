@@ -109,6 +109,21 @@ Panel {
     actionProcess.running = true
   }
 
+  // Profile the CONNECT button targets: the explicit `defaultProfile` widget
+  // setting, else the browsed row, else the active/first loaded profile.
+  // Returns "" while the subscription list is not loaded, so the button is
+  // disabled rather than sending a made-up group:index.
+  function connectTarget() {
+    var configured = setting("defaultProfile", "")
+    if (typeof configured === "string" && configured !== "") return configured
+    var profiles = root.presentation.profiles
+    if (!profiles || profiles.length === 0) return ""
+    var index = root.browseIndex >= 0 && root.browseIndex < profiles.length
+      ? root.browseIndex
+      : (root.presentation.activeProfileIndex >= 0 ? root.presentation.activeProfileIndex : 0)
+    return root.pinKey(profiles[index])
+  }
+
   function connect(target) { runAction(["connect", target, "--wait"]) }
   function disconnect() { runAction(["disconnect", "--wait"]) }
   function setMode(newMode) { runAction(["mode", newMode]) }
@@ -562,11 +577,13 @@ Panel {
             // Connect/disconnect — user-click only. Never triggered by this
             // plugin's own refresh/polling path.
             ActionButton {
-              text: root.presentation.connected ? "DISCONNECT" : "CONNECT"
+              text: root.presentation.connected ? "DISCONNECT"
+                : (root.connectTarget() === "" ? "NO PROFILES LOADED" : "CONNECT")
               enabled: !root.actionRunning
+                && (root.presentation.connected || root.connectTarget() !== "")
               onClicked: {
                 if (root.presentation.connected) root.disconnect()
-                else root.connect(setting("defaultProfile", "default:default"))
+                else root.connect(root.connectTarget())
               }
             }
 
