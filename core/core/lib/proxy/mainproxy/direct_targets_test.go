@@ -1,0 +1,22 @@
+package mainproxy
+
+import (
+	"reflect"
+	"testing"
+
+	"whoisthat-core/structs"
+)
+
+func TestDirectTargetsFromRules(t *testing.T) {
+	got := directTargetsFromRules([]structs.RoutingRule{
+		{Type: "domain", Domain: "full:api.example.test, geosite:cn, *.wild.test", OutboundTag: "direct", Enabled: true},
+		{Type: "ip", IP: "203.0.113.0/24,geoip:private,2001:db8::1", OutboundTag: "direct", Enabled: true},
+		{Type: "domain", Domain: "proxied.test", OutboundTag: "proxy", Enabled: true},
+		{Type: "domain", Domain: "off.test", OutboundTag: "direct", Enabled: false},
+		{Type: "domain", Domain: "API.example.test", OutboundTag: "direct", Enabled: true},
+	})
+	want := []string{"api.example.test", "203.0.113.0/24", "2001:db8::1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+}
