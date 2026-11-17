@@ -369,7 +369,12 @@ func removeDirectHostRoutes() {
 		if len(f) != 4 {
 			continue
 		}
-		_, _ = runScriptWithSh(fmt.Sprintf("ip %s route del %s dev %s via %s", f[3], f[0], f[1], f[2]))
+		// Delete by prefix only: a second arm can have replaced the entry with
+		// slightly different attributes, and a dev/via-qualified delete then
+		// returns ENOENT and leaves it behind.
+		if _, err := runScriptWithSh(fmt.Sprintf("ip %s route del %s", f[3], f[0])); err != nil {
+			_, _ = runScriptWithSh(fmt.Sprintf("ip %s route del %s dev %s", f[3], f[0], f[1]))
+		}
 	}
 	directRouteList = nil
 }
