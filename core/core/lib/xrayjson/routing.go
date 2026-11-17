@@ -349,6 +349,29 @@ func markFreedomOutbounds(outbounds []interface{}) {
 	}
 }
 
+// markDialingOutbounds stamps fwmark 1 on every outbound that opens a socket,
+// so xray's own egress takes the fwmark table (the physical gateway) and can
+// never be routed back into the TUN default route, whatever address it
+// resolves for the server. Only used with a TUN inbound: SO_MARK needs
+// CAP_NET_ADMIN, which a socks-only xray does not have.
+func markDialingOutbounds(outbounds []interface{}) {
+	for _, raw := range outbounds {
+		ob, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		switch ob["protocol"] {
+		case "blackhole", "dns", "loopback", "wireguard":
+			continue
+		}
+		stream := asMap(ob["streamSettings"])
+		sockopt := asMap(stream["sockopt"])
+		sockopt["mark"] = 1
+		stream["sockopt"] = sockopt
+		ob["streamSettings"] = stream
+	}
+}
+
 // fixDanglingDialerProxy repairs sockopt.dialerProxy values that point to an
 // outbound tag the provider config does not contain (multik's auto configs
 // reference "proxy", which only exists in its simple presets). The provider
