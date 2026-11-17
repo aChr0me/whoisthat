@@ -470,3 +470,28 @@ func TestShadowsocksSIP002PlainUserinfo(t *testing.T) {
 		t.Errorf("password = %v, want sec:ret", rd.UUID)
 	}
 }
+
+// xray 26.x rejects vless without TLS/reality unless the server is a private
+// address, so an absent security param must default to tls, while an explicit
+// security=none is preserved.
+func TestVlessSecurityDefault(t *testing.T) {
+	ob, _, err := createOutboundObject("vless://uuid@example.com:443?sni=sni.com#t")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	ss := ob.StreamSettings
+	if ss.Security == nil || *ss.Security != "tls" {
+		t.Fatalf("absent security: want tls, got %v", ss.Security)
+	}
+	if ss.TLSSettings == nil || ss.TLSSettings.ServerName == nil || *ss.TLSSettings.ServerName != "sni.com" {
+		t.Errorf("absent security: want tlsSettings with sni.com, got %+v", ss.TLSSettings)
+	}
+
+	ob, _, err = createOutboundObject("vless://uuid@10.0.0.1:443?security=none#t")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if s := ob.StreamSettings.Security; s == nil || *s != "none" || ob.StreamSettings.TLSSettings != nil {
+		t.Errorf("explicit none must be preserved without tlsSettings, got %v", s)
+	}
+}

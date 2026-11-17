@@ -157,7 +157,9 @@ func createOutboundObject(uri string) (Outbound, RawData, error) {
 	if isHy2 {
 		sec := "tls"
 		effectiveSecurity = &sec
-	} else if proto == "trojan" {
+	} else if proto == "trojan" || proto == "vless" {
+		// xray >= 26.11 rejects plaintext vless to a public host, so an absent
+		// security param defaults to tls. An explicit security=none is kept.
 		if rd.Security != nil && *rd.Security != "" {
 			effectiveSecurity = rd.Security
 		} else {
