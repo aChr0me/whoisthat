@@ -47,12 +47,11 @@ func directTargetsFromRules(rules []structs.RoutingRule) []string {
 		if !r.Enabled || r.OutboundTag != "direct" {
 			continue
 		}
-		switch r.Type {
-		case "domain":
-			add(r.Domain)
-		case "ip":
-			add(r.IP)
-		}
+		// Match on the populated field rather than on the type name: the
+		// stored rules are all type "field", with Domain or IP set, so
+		// switching on "domain"/"ip" alone skipped every manual rule.
+		add(r.IP)
+		add(r.Domain)
 	}
 	return out
 }

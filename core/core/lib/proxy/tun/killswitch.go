@@ -76,6 +76,7 @@ var validTunNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 func SetupKillSwitchBlock(proxyIPs []string, tunName string, dnsServers []string) error {
 	direct := currentDirectExceptions()
 	d4, d6 := splitNetsValid(direct)
+	logger.Infof("kill-switch: direct-rule targets %v", direct)
 	// Visible at arm time: a missing exception shows up as a low count.
 	logger.Infof("kill-switch: %d direct-rule accept exceptions (v4 %d, v6 %d)", len(d4)+len(d6), len(d4), len(d6))
 	// K-2: refuse to arm over a DoT-only resolver we cannot neutralise.
