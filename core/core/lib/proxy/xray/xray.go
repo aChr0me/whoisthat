@@ -189,7 +189,7 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 		_ = xrayLog.Close()
 	}
 
-	logger.Infof("xray started (pid=%d)", cmd.Process.Pid)
+	logger.Infof("xray started (pid=%d, instances alive=%d)", cmd.Process.Pid, countXray(xraybin))
 
 	waitDone := make(chan struct{})
 	x.waitDone = waitDone

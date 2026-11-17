@@ -15,24 +15,49 @@ import (
 var (
 	procRoot = "/proc"
 	killPid  = func(pid int) error { return syscall.Kill(pid, syscall.SIGKILL) }
+	getPpid  = os.Getppid
 )
 
 // reapOrphanXray kills xray processes left behind by a previous core. A leftover
 // holds the TUN device and ports, so a fresh instance would lose the race.
 //
 // Deliberately narrow: the executable must be exactly bin, the command must be
-// `run`, and the parent must be init (pid 1). Children of this core (including
-// concurrent test probes) have our pid as parent and are never touched.
+// `run`, and the parent must be init (pid 1) or our own parent (the systemd
+// user manager / subreaper that adopts the orphans of a previous core). Children
+// of this core (including concurrent test probes) have our pid as parent and
+// are never touched.
 func reapOrphanXray(bin string) int {
+	reaped := 0
+	for _, pid := range matchXray(bin, true) {
+		if err := killPid(pid); err != nil {
+			logger.Warnf("xray: cannot reap orphan pid=%d: %v", pid, err)
+			continue
+		}
+		logger.Warnf("xray: reaped orphan instance pid=%d", pid)
+		reaped++
+	}
+	if reaped > 0 {
+		time.Sleep(100 * time.Millisecond) // let the kernel release the tun fd/ports
+	}
+	return reaped
+}
+
+// countXray returns how many exact-binary `xray run` processes are alive,
+// whoever their parent is.
+func countXray(bin string) int { return len(matchXray(bin, false)) }
+
+// matchXray lists pids of `<bin> run` processes. With orphansOnly, only those
+// whose parent is pid 1 or this core's own parent.
+func matchXray(bin string, orphansOnly bool) []int {
 	entries, err := os.ReadDir(procRoot)
 	if err != nil {
-		return 0
+		return nil
 	}
 	want, err := filepath.EvalSymlinks(bin)
 	if err != nil {
 		want = bin
 	}
-	reaped := 0
+	var pids []int
 	for _, e := range entries {
 		pid, err := strconv.Atoi(e.Name())
 		if err != nil || pid <= 1 || pid == os.Getpid() {
@@ -51,20 +76,14 @@ func reapOrphanXray(bin string) int {
 		if len(args) != 2 || string(args[1]) != "run" {
 			continue
 		}
-		if ppid(dir) != 1 {
-			continue
+		if orphansOnly {
+			if p := ppid(dir); p != 1 && (p <= 0 || p != getPpid()) {
+				continue
+			}
 		}
-		if err := killPid(pid); err != nil {
-			logger.Warnf("xray: cannot reap orphan pid=%d: %v", pid, err)
-			continue
-		}
-		logger.Warnf("xray: reaped orphan instance pid=%d", pid)
-		reaped++
+		pids = append(pids, pid)
 	}
-	if reaped > 0 {
-		time.Sleep(100 * time.Millisecond) // let the kernel release the tun fd/ports
-	}
-	return reaped
+	return pids
 }
 
 // ppid reads the parent pid from /proc/<pid>/stat (comm may contain spaces, so

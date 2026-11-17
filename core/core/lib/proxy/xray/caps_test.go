@@ -3,10 +3,13 @@ package xray
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"whoisthat-core/utils"
 )
@@ -18,6 +21,11 @@ const xrayCapsHelperEnv = "WHOISTHAT_XRAY_CAPS_HELPER"
 // ambient set, then spawn a child with the xray process attributes.
 func TestMain(m *testing.M) {
 	utils.HandleNoCapsExec(os.Args[1:]) // the shim re-executes this binary
+	if len(os.Args) == 2 && os.Args[1] == "run" && filepath.Base(os.Args[0]) == "xray" {
+		io.Copy(io.Discard, os.Stdin) // fake xray (a copy of this binary): live until stdin closes or killed
+		time.Sleep(time.Minute)
+		os.Exit(0)
+	}
 	if os.Getenv(xrayCapsHelperEnv) == "1" {
 		utils.RaiseAmbientCaps()
 		fmt.Println("parent", capLine("CapAmb"))

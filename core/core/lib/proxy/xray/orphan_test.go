@@ -32,14 +32,16 @@ func TestReapOrphanXrayOnlyKillsInitParentedRunInstances(t *testing.T) {
 	fakeProc(t, root, 102, bin, "xray\x00run\x00-test\x00", 1)  // wrong subcommand: kept
 	fakeProc(t, root, 103, other, "xray\x00run\x00", 1)         // other binary: kept
 	fakeProc(t, root, 104, bin, "xray\x00run\x00", 4242)        // parented elsewhere: kept
+	fakeProc(t, root, 105, bin, "xray\x00run\x00", 1065)        // re-parented to the user manager: reaped
 
-	oldRoot, oldKill := procRoot, killPid
+	oldRoot, oldKill, oldPpid := procRoot, killPid, getPpid
+	getPpid = func() int { return 1065 }
 	procRoot = root
 	var killed []int
 	killPid = func(pid int) error { killed = append(killed, pid); return nil }
-	t.Cleanup(func() { procRoot, killPid = oldRoot, oldKill })
+	t.Cleanup(func() { procRoot, killPid, getPpid = oldRoot, oldKill, oldPpid })
 
-	if n := reapOrphanXray(bin); n != 1 || len(killed) != 1 || killed[0] != 100 {
-		t.Fatalf("reaped=%d killed=%v, want only pid 100", n, killed)
+	if n := reapOrphanXray(bin); n != 2 || len(killed) != 2 || killed[0] != 100 || killed[1] != 105 {
+		t.Fatalf("reaped=%d killed=%v, want pids 100 and 105", n, killed)
 	}
 }
