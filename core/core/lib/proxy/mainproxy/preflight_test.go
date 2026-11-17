@@ -9,7 +9,7 @@ import (
 	"whoisthat-core/structs"
 )
 
-const preflightTestURI = "vless://uuid@example.com:443?test=1#Preflight"
+const preflightTestURI = "vless://uuid@example.com:443?security=tls&sni=example.com&test=1#Preflight"
 
 func TestBuildPreflightConfigOmitsTunInbound(t *testing.T) {
 	profile := structs.Profile{Id: 1, GroupId: 1, Name: "p", Uri: preflightTestURI}
