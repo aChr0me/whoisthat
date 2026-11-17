@@ -195,6 +195,8 @@ async fn set_values(g: &GlobalArgs, assignments: &[String], force: bool) -> Resu
     }
 
     let out = Out::new(g);
+    // Actual firewall state reported by the core for a kill-switch assignment.
+    let mut armed_result: Option<bool> = None;
     let core_jobs: Vec<&(String, String)> = parsed.iter().filter(|(k, _)| is_core_key(k)).collect();
     let local_jobs: Vec<&(String, String)> =
         parsed.iter().filter(|(k, _)| !is_core_key(k)).collect();
@@ -202,7 +204,9 @@ async fn set_values(g: &GlobalArgs, assignments: &[String], force: bool) -> Resu
     if !core_jobs.is_empty() {
         let mut session = Session::open_or_spawn(g).await?;
         for (key, value) in core_jobs {
-            apply_core(&mut session, &out, key, value, force).await?;
+            if let Some(armed) = apply_core(&mut session, &out, key, value, force).await? {
+                armed_result = Some(armed);
+            }
         }
         session.flush_warnings(&out);
     }
@@ -224,7 +228,10 @@ async fn set_values(g: &GlobalArgs, assignments: &[String], force: bool) -> Resu
     if g.json {
         let applied: Vec<Value> = parsed
             .iter()
-            .map(|(k, v)| json!({"key": k, "value": v}))
+            .map(|(k, v)| match (k.as_str(), armed_result) {
+                ("kill-switch", Some(armed)) => json!({"key": k, "value": v, "armed": armed}),
+                _ => json!({"key": k, "value": v}),
+            })
             .collect();
         out.json(&json!({"ok": true, "applied": applied}));
     }
@@ -237,7 +244,7 @@ async fn apply_core(
     key: &str,
     value: &str,
     force: bool,
-) -> Result<(), CliError> {
+) -> Result<Option<bool>, CliError> {
     match key {
         "kill-switch" => {
             let want = parse_bool(value)?;
@@ -276,6 +283,11 @@ async fn apply_core(
                 "kill-switch={} armed={}",
                 reply.enabled, reply.armed
             ));
+            if reply.enabled && !reply.armed {
+                session.flush_warnings(out);
+                eprintln!("warning: kill-switch is enabled but not armed; see core.log");
+            }
+            return Ok(Some(reply.armed));
         }
         "split-tunnel" => {
             let reply: SetSplitTunnelData = session
@@ -456,7 +468,7 @@ async fn apply_core(
         }
         _ => return Err(CliError::Usage(format!("unknown core setting '{key}'"))),
     }
-    Ok(())
+    Ok(None)
 }
 
 fn apply_local(cfg: &mut config::AppConfig, key: &str, value: &str) -> Result<(), CliError> {
