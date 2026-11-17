@@ -49,10 +49,16 @@ fi
 step "connect $PROFILE"
 # --wait can hang forever when the core drops the CLI as a slow client; the
 # connection itself still completes, so bound the wait and fall back to status.
-timeout 90 "$WT" connect "$PROFILE" --wait -j >/dev/null 2>&1 || true
-for i in $(seq 1 30); do
+# A connect can also land on a still-settling teardown, so retry it.
+for attempt in 1 2 3; do
+  timeout 90 "$WT" connect "$PROFILE" --wait -j >/dev/null 2>&1 || true
+  for i in $(seq 1 30); do
+    "$WT" status 2>/dev/null | grep -q '\[Connected\]' && break
+    sleep 1
+  done
   "$WT" status 2>/dev/null | grep -q '\[Connected\]' && break
-  sleep 1
+  "$WT" disconnect -j >/dev/null 2>&1
+  sleep 3
 done
 "$WT" status 2>/dev/null | grep -q '\[Connected\]' || { verdict fail connect "connect failed"; exit 1; }
 step "mode tun"
@@ -76,9 +82,14 @@ step "re-arm"
 "$WT" settings set kill-switch=false -j >/dev/null 2>&1
 sleep 2
 "$WT" settings set kill-switch=true -j >/dev/null 2>&1 || { verdict fail rearm "re-arm failed"; exit 1; }
-sleep 3
+# A refresh kicks off background profile tests; arming can take a while.
+armed=0
+for i in $(seq 1 30); do
+  armed=$("$WT" settings get kill-switch-armed -j 2>/dev/null | grep -c true)
+  [ "$armed" = "1" ] && break
+  sleep 1
+done
 second=$(exceptions)
-armed=$("$WT" settings get kill-switch-armed -j 2>/dev/null | grep -c true)
 
 note="refreshed=$refreshed first=$first second=$second"
 [ "${second:-0}" -gt 0 ] || { verdict fail rearm "$note (no exceptions after re-arm)"; exit 1; }

@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"sync"
+
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
 	tunmode "whoisthat-core/lib/proxy/tun"
@@ -17,6 +19,11 @@ type killSwitchProxy interface {
 
 // Test seams: the command layer decides *when* to arm, so its tests must not
 // touch the real firewall.
+// killSwitchMu serialises the firewall writes themselves. ConnectionMutex cannot
+// do it: a routing reload refreshes from outside that lock, and two concurrent
+// nft rewrites interleave into a half-written ruleset.
+var killSwitchMu sync.Mutex
+
 var (
 	setupKillSwitchBlock  = tunmode.SetupKillSwitchBlock
 	removeKillSwitchBlock = tunmode.RemoveKillSwitchBlock
@@ -56,7 +63,10 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 		// steps would still see the switch enabled and re-arm it, leaving the
 		// config saying "off" while the drop rules are live.
 		appconfig.SetKillSwitch(false)
-		if err := removeKillSwitchBlock(); err != nil {
+		killSwitchMu.Lock()
+		err := removeKillSwitchBlock()
+		killSwitchMu.Unlock()
+		if err != nil {
 			logger.Warn("kill-switch: failed to remove block:", err)
 			// The rules may still be dropping traffic. Reporting "off" while the
 			// block is armed would be a lie, so keep the switch on and let the
@@ -87,7 +97,10 @@ func (cmd *Cmd) SetKillSwitch(data structs.SetKillSwitchData, proxy_manager kill
 		return
 	}
 
-	if err := setupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
+	killSwitchMu.Lock()
+	err := setupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers)
+	killSwitchMu.Unlock()
+	if err != nil {
 		logger.Warn("kill-switch: failed to apply block:", err)
 		cmd.warn("set-kill-switch-failed", "failed to arm kill-switch")
 		appconfig.SetKillSwitch(true)
@@ -118,13 +131,8 @@ func (cmd *Cmd) refreshKillSwitch(proxy_manager killSwitchProxy) {
 		return
 	}
 	cfg := appconfig.GetConfig()
-	// Callers such as connect and disarm already hold the mutex (it is not
-	// reentrant), so a refresh must not block on it: skipping is safe, the next
-	// arm re-resolves anyway.
-	if !ConnectionMutex.TryLock() {
-		return
-	}
-	defer ConnectionMutex.Unlock()
+	killSwitchMu.Lock()
+	defer killSwitchMu.Unlock()
 	if err := setupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
 		logger.Warn("kill-switch: refresh after routing change failed:", err)
 		return
