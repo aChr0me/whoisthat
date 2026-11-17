@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"whoisthat-core/lib/logger"
 )
 
 // ---------------------------------------------------------------------------
@@ -364,6 +366,7 @@ func addDirectHostRoutes(v4, v6 []string, tunName string) error {
 func removeDirectHostRoutes() {
 	directRouteMu.Lock()
 	defer directRouteMu.Unlock()
+	logger.Infof("kill-switch: removing %d pinned direct routes", len(directRouteList))
 	for _, entry := range directRouteList {
 		f := strings.Fields(entry)
 		if len(f) != 4 {
@@ -373,6 +376,7 @@ func removeDirectHostRoutes() {
 		// slightly different attributes, and a dev/via-qualified delete then
 		// returns ENOENT and leaves it behind.
 		if _, err := runScriptWithSh(fmt.Sprintf("ip %s route del %s", f[3], f[0])); err != nil {
+			logger.Warn("kill-switch: route del failed:", err)
 			_, _ = runScriptWithSh(fmt.Sprintf("ip %s route del %s dev %s", f[3], f[0], f[1]))
 		}
 	}
