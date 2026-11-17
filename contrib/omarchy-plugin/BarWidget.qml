@@ -12,9 +12,15 @@ BarWidget {
     : StateModel.indicator(null)
   // Graphite-dark "disconnected" grey (src/ui/theme.rs) as the fallback
   // before the panel has loaded, so the bar dot never flashes a mismatched hue.
+  readonly property color localSignalColor: ({
+    "green": "#7ec699",
+    "amber": "#e6b566",
+    "red": "#e06c75",
+    "grey": "#8d8d8d"
+  })[indicator.signal] || "#8d8d8d"
   readonly property color signalColor: panelLoader.item
     ? panelLoader.item.signalColor
-    : "#696e78"
+    : localSignalColor
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item ? panelLoader.item.popoutSwitchClosing === true : false
 
@@ -58,7 +64,7 @@ BarWidget {
     bar: root.bar
     text: ""
     hasVisualContent: true
-    fixedWidth: signalRow.implicitWidth + Style.space(17)
+    fixedWidth: signalRow.implicitWidth + Style.space(11)
     tooltipText: "WhoisThat status"
 
     onPressed: function(buttonCode) {
@@ -68,10 +74,12 @@ BarWidget {
 
     Row {
       id: signalRow
-      anchors.centerIn: parent
+      anchors.verticalCenter: button.bar ? button.bar.verticalCenter : parent.verticalCenter
+      anchors.horizontalCenter: parent.horizontalCenter
       spacing: Style.space(5)
 
       Text {
+        id: stateLabel
         text: root.indicator.label
         color: button.foreground
         font.family: button.fontFamily
@@ -81,26 +89,16 @@ BarWidget {
         renderType: Text.NativeRendering
       }
 
-      Rectangle {
-        id: stateDot
-        width: Style.space(7)
-        height: Style.space(7)
-        radius: width / 2
-        anchors.verticalCenter: parent.verticalCenter
-        color: root.signalColor
-        border.width: root.indicator.signal === "grey" ? 1 : 0
-        border.color: button.foreground
-
-        Behavior on color { ColorAnimation { duration: 160 } }
-      }
-
+      // Single signal dot. A glyph rather than a Rectangle: it inherits the
+      // label's font and baseline, so it cannot drift out of line and needs no
+      // size or anchor maths.
       Text {
-        text: root.indicator.suffix
+        id: stateDot
+        text: "\u25cf"
         color: root.signalColor
         font.family: button.fontFamily
-        font.pixelSize: Style.font.bodySmall
-        font.bold: root.indicator.signal !== "grey"
-        font.letterSpacing: 0.4
+        font.pixelSize: Style.space(11)
+        anchors.verticalCenter: stateLabel.verticalCenter
         renderType: Text.NativeRendering
 
         Behavior on color { ColorAnimation { duration: 160 } }

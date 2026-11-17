@@ -99,8 +99,7 @@ function signalFor(state) {
 function indicator(value) {
   var state = accept(value)
   var signal = signalFor(state)
-  var suffix = state.connected ? "●" : "·"
-  return { label: "WT", suffix: suffix, signal: signal }
+  return { label: "WT", signal: signal }
 }
 
 function display(value, fallbackValue) {
