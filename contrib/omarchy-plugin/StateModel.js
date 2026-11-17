@@ -19,11 +19,15 @@ function fallback() {
     profileName: "",
     groupName: "",
     protocol: "",
+    transport: "",
+    security: "",
+    sni: "",
     jitterMs: 0,
     lossPct: 0,
     tested: false,
     address: "",
     port: 0,
+    groupIds: [],
     profiles: []
   }
 }
@@ -52,8 +56,8 @@ function isNullableBool(value) {
 // and the caller gets a safe, fully-disconnected fallback record instead.
 function accept(value) {
   var topKeys = ["schemaVersion", "observedAt", "coreReachable", "connected", "status", "mode", "killSwitchArmed",
-    "rxHuman", "txHuman", "groupId", "profileId", "profileName", "groupName", "protocol", "jitterMs", "lossPct",
-    "tested", "address", "port", "profiles"]
+    "rxHuman", "txHuman", "groupId", "profileId", "profileName", "groupName", "protocol", "transport", "security", "sni", "jitterMs", "lossPct",
+    "tested", "address", "port", "groupIds", "profiles"]
   if (!hasExactKeys(value, topKeys)) return fallback()
   if (value.schemaVersion !== 2) return fallback()
   if (typeof value.observedAt !== "string") return fallback()
@@ -69,11 +73,15 @@ function accept(value) {
   if (typeof value.profileName !== "string") return fallback()
   if (typeof value.groupName !== "string") return fallback()
   if (typeof value.protocol !== "string") return fallback()
+  if (typeof value.transport !== "string") return fallback()
+  if (typeof value.security !== "string") return fallback()
+  if (typeof value.sni !== "string") return fallback()
   if (typeof value.jitterMs !== "number") return fallback()
   if (typeof value.lossPct !== "number") return fallback()
   if (typeof value.tested !== "boolean") return fallback()
   if (typeof value.address !== "string") return fallback()
   if (typeof value.port !== "number") return fallback()
+  if (!Array.isArray(value.groupIds)) return fallback()
   if (!Array.isArray(value.profiles)) return fallback()
 
   // A disconnected agent cannot plausibly report itself connected.
@@ -164,6 +172,10 @@ function panel(value) {
     profileName: display(state.profileName, state.connected ? "UNKNOWN" : "—"),
     groupName: display(state.groupName, "—"),
     protocol: state.protocol ? state.protocol.toUpperCase() : "—",
+    groupIds: state.groupIds || [],
+    transport: state.transport ? state.transport.toUpperCase() : "",
+    security: state.security ? state.security.toUpperCase() : "",
+    sni: state.sni,
     hasProfileDetail: state.profileName !== "" || state.groupName !== "",
     hasJitter: hasJitter,
     jitterLabel: hasJitter ? ("±" + state.jitterMs + " ms") : "",

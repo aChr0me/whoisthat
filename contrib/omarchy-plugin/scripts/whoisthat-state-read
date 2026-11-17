@@ -33,6 +33,23 @@ ENV.setdefault(
 )
 
 
+def uri_shape(uri):
+    """Transport / security / SNI from a share URI, for the panel's info rows.
+
+    Values come straight out of the query string; anything absent stays empty so
+    the row can hide itself rather than print a guess.
+    """
+    if "?" not in uri:
+        return "", "", ""
+    query = dict(
+        part.split("=", 1) if "=" in part else (part, "")
+        for part in uri.split("?", 1)[1].split("&")
+        if part
+    )
+    transport = "" if query.get("type", "tcp") == "tcp" else query.get("type", "")
+    security = "" if query.get("security", "none") == "none" else query.get("security", "")
+    return transport, security, query.get("sni", query.get("host", ""))
+
 def run_json(args):
     """Run a whoisthat subcommand and return parsed JSON, or None on any failure."""
     try:
@@ -82,6 +99,9 @@ def main():
     tested = False
     address = ""
     port = 0
+    transport = ""
+    security = ""
+    sni = ""
 
     if core_reachable and isinstance(group_id, int) and isinstance(profile_id, int) and group_id > 0 and profile_id > 0:
         detail = run_json(["profile", "show", str(profile_id), "--group", str(group_id), "-j"])
@@ -94,11 +114,20 @@ def main():
             tested = isinstance(detail.get("test_result"), (int, float)) and detail.get("test_result", -1) >= 0
             address = str(detail.get("address", ""))
             port = detail.get("port", 0) if isinstance(detail.get("port"), (int, float)) else 0
+            transport, security, sni = uri_shape(str(detail.get("uri") or ""))
+            # profile show reports uri=null, so the SNI has to come from host.
+            if not sni:
+                sni = str(detail.get("host") or "")
 
     # Lightweight profile/group browser list: just the profiles belonging
     # to the currently active group (or group 1 if nothing is active yet),
     # name + id only, for the panel's profile switcher. Cheap (<10ms even
     # for ~50 profiles) since whoisthat-core keeps this cached locally.
+    group_ids = []
+    if core_reachable:
+        for g in (run_json(["sub", "list", "-j"]) or []):
+            if isinstance(g, dict) and isinstance(g.get("id"), int):
+                group_ids.append(g["id"])
     profiles = []
     browse_group = group_id if (isinstance(group_id, int) and group_id > 0) else None
     if browse_group is None and core_reachable:
@@ -112,6 +141,10 @@ def main():
                 browse_group = best["id"]
     if browse_group is None:
         browse_group = 1
+    # Explicit override from the panel's SUBS button wins over the guesses above.
+    override = os.environ.get("WT_BROWSE_GROUP", "")
+    if override.isdigit() and int(override) > 0:
+        browse_group = int(override)
     plist = run_json(["profile", "list", "-j", "--group", str(browse_group)]) if core_reachable else None
     if isinstance(plist, list):
         for item in plist:
@@ -139,11 +172,15 @@ def main():
         "profileName": profile_name,
         "groupName": group_name,
         "protocol": protocol,
+        "transport": transport,
+        "security": security,
+        "sni": sni,
         "jitterMs": jitter_ms,
         "lossPct": loss_pct,
         "tested": bool(tested),
         "address": address,
         "port": port,
+        "groupIds": group_ids,
         "profiles": profiles,
     }
 
@@ -172,11 +209,15 @@ if __name__ == "__main__":
             "profileName": "",
             "groupName": "",
             "protocol": "",
+            "transport": "",
+            "security": "",
+            "sni": "",
             "jitterMs": 0,
             "lossPct": 0,
             "tested": False,
             "address": "",
             "port": 0,
+            "groupIds": [],
             "profiles": [],
         }))
         raise SystemExit(1)

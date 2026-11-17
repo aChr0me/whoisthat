@@ -33,6 +33,7 @@ Panel {
   readonly property var presentation: StateModel.panel(stateRecord)
   readonly property int refreshSeconds: Math.max(1, Math.min(60, parseInt(setting("refreshIntervalSec", 3), 10) || 3))
   readonly property string pluginDir: Quickshell.env("HOME") + "/.config/omarchy/plugins/io.github.achr0me.whoisthat"
+  property int browseGroup: 0
   readonly property string readerPath: pluginDir + "/scripts/whoisthat-state-read"
   readonly property string whoisthatBin: Quickshell.env("WHOISTHAT_BIN") || (Quickshell.env("HOME") + "/Projects/whoisthat/target/release/whoisthat")
 
@@ -200,6 +201,9 @@ Panel {
 
   Process {
     id: stateProcess
+    // Optional browse-group override, set by the SUBS button so the picker can
+    // move between subscriptions without connecting to one first.
+    environment: root.browseGroup > 0 ? { "WT_BROWSE_GROUP": String(root.browseGroup) } : {}
     command: [root.readerPath]
     stdout: StdioCollector {
       waitForEnd: true
@@ -373,6 +377,9 @@ Panel {
             InfoRow { label: "PROFILE"; value: root.presentation.profileName }
             InfoRow { label: "GROUP"; value: root.presentation.groupName }
             InfoRow { visible: root.presentation.connected || root.presentation.protocol !== "—"; label: "PROTOCOL"; value: root.presentation.protocol }
+            InfoRow { visible: root.presentation.connected && root.presentation.transport !== ""; label: "TRANSPORT"; value: root.presentation.transport }
+            InfoRow { visible: root.presentation.connected && root.presentation.security !== ""; label: "SECURITY"; value: root.presentation.security }
+            InfoRow { visible: root.presentation.connected && root.presentation.sni !== ""; label: "SNI"; value: root.presentation.sni }
             InfoRow { visible: root.presentation.hasJitter; label: "JITTER"; value: root.presentation.jitterLabel }
             InfoRow { visible: root.presentation.hasLoss; label: "LOSS"; value: root.presentation.lossLabel }
             InfoRow { label: "THROUGHPUT"; value: root.presentation.rxHuman + " ↓ / " + root.presentation.txHuman + " ↑" }
@@ -406,7 +413,7 @@ Panel {
               // never push the BROWSE button past the frame edge again. A
               // spacer item is deliberately not used -- its width could only
               // be another guess at what the texts will occupy.
-              readonly property real reserved: pickerToggle.width + pingButton.width + Style.space(8) * 3
+              readonly property real reserved: pickerToggle.width + subsButton.width + pingButton.width + Style.space(8) * 4
 
               Text {
                 id: groupLabel
@@ -450,6 +457,21 @@ Panel {
                 onClicked: root.pingGroup()
               }
 
+              SmallButton {
+                id: subsButton
+                z: 5
+                text: "SUBS"
+                anchors.verticalCenter: parent.verticalCenter
+                // Cycles the browse group; the reader takes it as an override so
+                // the picker can move between subscriptions without connecting.
+                onClicked: {
+                  var ids = root.presentation.groupIds || []
+                  if (!ids.length) return
+                  var at = ids.indexOf(root.browseGroup)
+                  root.browseGroup = ids[(at + 1) % ids.length]
+                  root.refreshPickerRows()
+                }
+              }
               SmallButton {
                 id: pickerToggle
                 z: 5
