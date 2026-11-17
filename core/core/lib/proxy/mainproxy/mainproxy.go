@@ -410,6 +410,7 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 	// about to use, before it starts. The block is never removed around the
 	// connect, so there is no unprotected window.
 	p.directTargets.set(directTargetsFromRules(selection.Config.Rules))
+	logger.Infof("routing: %d rules, %d direct in selection (source %s)", len(selection.Config.Rules), len(p.directTargets.get()), selection.Source)
 	if err := p.runPreStartHandler(profileIPs); err != nil {
 		if p.portPool != nil && apiPort != 0 {
 			p.portPool.ReleasePort(apiPort)
