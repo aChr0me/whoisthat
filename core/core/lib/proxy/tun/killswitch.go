@@ -11,6 +11,7 @@ import (
 	"whoisthat-core/utils"
 
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/netmark"
 )
 
 // Kill-switch: an independent filter chain that drops every locally-generated
@@ -38,7 +39,7 @@ const (
 	// killSwitchDirectMark is the fwmark used for "go out via the physical
 	// gateway" sockets: Xray's freedom outbound and split-exclude apps.
 	// Keep in sync with splitExcludeMark in split.go.
-	killSwitchDirectMark = 1
+	killSwitchDirectMark = netmark.DirectMark
 
 	// killSwitchDNSSink4/6 are the reserved addresses the TUN DNS hijack will
 	// redirect port 53 to. Nothing listens on them directly; they must stay

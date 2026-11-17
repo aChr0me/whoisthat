@@ -8,7 +8,9 @@ import (
 	"whoisthat-core/lib"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/netmark"
 	"whoisthat-core/lib/proxy/xray"
+	"whoisthat-core/lib/xrayjson"
 	"whoisthat-core/structs"
 )
 
@@ -117,7 +119,7 @@ func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection, 
 		},
 		"streamSettings": map[string]interface{}{
 			"sockopt": map[string]interface{}{
-				"mark": 1,
+				"mark": netmark.DirectMark,
 			},
 		},
 	}
@@ -134,6 +136,12 @@ func injectRoutingConfig(configJSON []byte, selection structs.RoutingSelection, 
 			"protocol": "dns",
 			"settings": map[string]interface{}{},
 		})
+	}
+	if tunActive {
+		// Every socket xray opens must bypass the TUN default route; see
+		// xrayjson.MarkDialingOutbounds.
+		xrayjson.MarkDialingOutbounds(outboundsRaw)
+		logger.Infof("tun: xray outbounds marked with fwmark %d", netmark.DirectMark)
 	}
 	config["outbounds"] = outboundsRaw
 

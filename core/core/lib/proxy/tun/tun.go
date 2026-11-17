@@ -6,6 +6,7 @@ import (
 	"sync"
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/netmark"
 	"whoisthat-core/utils"
 )
 
@@ -107,13 +108,13 @@ func (t *TunModeManager) Start(proxy_ipv4s []string, proxy_ipv6s []string, dns D
 		return fmt.Errorf("there was an error loosening rp filter %w", err)
 	}
 
-	err = addFwmarkRouting(1, interface_name, interface_ip)
+	err = addFwmarkRouting(netmark.DirectMark, interface_name, interface_ip)
 	if err != nil {
 		t.clearNetworkRules()
 		return fmt.Errorf("there was an error adding fwmark routing: %w", err)
 	}
 	if t.default_interface_ipv6 != "" {
-		err = addFwmarkRouting6(1, interface_name, t.default_interface_ipv6)
+		err = addFwmarkRouting6(netmark.DirectMark, interface_name, t.default_interface_ipv6)
 		if err != nil {
 			t.clearNetworkRules()
 			return fmt.Errorf("there was an error adding ipv6 fwmark routing: %w", err)
@@ -267,8 +268,8 @@ func (t *TunModeManager) clearNetworkRules() error {
 		deleteTun(t.tun_name),
 		cleanDnsHijackRules(),
 		deleteProxyIpRoutes(t.proxy_ipv4s, t.proxy_ipv6s, t.default_interface_ip, t.default_interface_ipv6),
-		removeFwmarkRouting(1, t.default_interface, t.default_interface_ip),
-		removeFwmarkRouting6(1, t.default_interface, t.default_interface_ipv6),
+		removeFwmarkRouting(netmark.DirectMark, t.default_interface, t.default_interface_ip),
+		removeFwmarkRouting6(netmark.DirectMark, t.default_interface, t.default_interface_ipv6),
 		cleanConntrackRules(),
 		t.removeSplitRules(),
 		revertResolvectlDns(t.tun_name),

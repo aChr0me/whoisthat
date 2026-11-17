@@ -57,7 +57,7 @@ func Prepare(raw json.RawMessage, opts Options) (Prepared, error) {
 	outbounds = ensureServiceOutbounds(outbounds)
 	markFreedomOutbounds(outbounds)
 	if opts.TunName != "" {
-		markDialingOutbounds(outbounds)
+		MarkDialingOutbounds(outbounds)
 	}
 	fixDanglingDialerProxy(outbounds, proxyTags)
 	config["outbounds"] = outbounds

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	appconfig "whoisthat-core/lib/AppConfig"
+	"whoisthat-core/lib/netmark"
 	"whoisthat-core/structs"
 )
 
@@ -796,4 +797,48 @@ func hasDestOverride(sniffing map[string]interface{}, value string) bool {
 		}
 	}
 	return false
+}
+
+// With TUN active every outbound that dials must carry the direct fwmark, or
+// xray's uplink is routed back into the tun it writes to and loops.
+func TestInjectRoutingConfig_TunMarksEveryDialingOutbound(t *testing.T) {
+	base := []byte(`{"outbounds":[{"tag":"proxy","protocol":"vless","streamSettings":{"sockopt":{"tcpCongestion":"bbr","tcpUserTimeout":10000}}}]}`)
+	sel := structs.RoutingSelection{Source: "manual"}
+
+	mark := func(tun bool) map[string]interface{} {
+		out, err := injectRoutingConfig(base, sel, tun)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg struct {
+			Outbounds []map[string]interface{} `json:"outbounds"`
+		}
+		if err := json.Unmarshal(out, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		res := map[string]interface{}{}
+		for _, ob := range cfg.Outbounds {
+			st, _ := ob["streamSettings"].(map[string]interface{})
+			so, _ := st["sockopt"].(map[string]interface{})
+			res[ob["tag"].(string)] = so
+		}
+		return res
+	}
+
+	on := mark(true)
+	for _, tag := range []string{"proxy", "direct"} {
+		so, _ := on[tag].(map[string]interface{})
+		if so["mark"] != float64(netmark.DirectMark) {
+			t.Errorf("tun on: outbound %q sockopt=%v, want mark %d", tag, so, netmark.DirectMark)
+		}
+	}
+	if so, _ := on["proxy"].(map[string]interface{}); so["tcpCongestion"] != "bbr" {
+		t.Errorf("existing sockopt keys dropped: %v", so)
+	}
+	if so, _ := on["block"].(map[string]interface{}); so != nil {
+		t.Errorf("blackhole must stay unmarked: %v", so)
+	}
+	if so, _ := mark(false)["proxy"].(map[string]interface{}); so["mark"] != nil {
+		t.Errorf("tun off: proxy must stay unmarked (SO_MARK needs CAP_NET_ADMIN): %v", so)
+	}
 }
