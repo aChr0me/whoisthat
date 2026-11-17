@@ -163,3 +163,21 @@ func TestArmBootRejectsUnexpectedConfigDir(t *testing.T) {
 		t.Fatal("config dir must end in /whoisthat")
 	}
 }
+
+func TestCleanupLockSecondCallerIsNoOp(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+
+	unlock, busy, err := acquireCleanupLock()
+	if err != nil || busy {
+		t.Fatalf("first: busy=%v err=%v", busy, err)
+	}
+	if _, busy, err = acquireCleanupLock(); err != nil || !busy {
+		t.Fatalf("second while held: busy=%v err=%v, want busy", busy, err)
+	}
+	unlock()
+	unlock2, busy, err := acquireCleanupLock()
+	if err != nil || busy {
+		t.Fatalf("after release: busy=%v err=%v", busy, err)
+	}
+	unlock2()
+}

@@ -76,6 +76,21 @@ func handleArgs(args []string) (code int, done bool) {
 			fmt.Fprintln(os.Stderr, "whoisthat-core: a core is still running; stop it first")
 			return 1, true
 		}
+		// Serialise against a concurrent cleanup (ExecStopPost firing next to
+		// a manual run) and against a core's own startup reconcile: the
+		// teardown scripts are idempotent one by one, but interleaved they
+		// can delete each other's half-built state. A second invocation is a
+		// no-op, not an error: the holder is doing the same job.
+		unlock, held, err := acquireCleanupLock()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "whoisthat-core: cleanup:", err)
+			return 1, true
+		}
+		if held {
+			fmt.Println("another cleanup or core startup is already running; nothing to do")
+			return 0, true
+		}
+		defer unlock()
 		if err := tunmode.ReconcileOrphanedRules(appconfig.GetConfig().TunName); err != nil {
 			fmt.Fprintln(os.Stderr, "whoisthat-core: cleanup:", err)
 			return 1, true
@@ -189,10 +204,17 @@ func main() {
 	// up (hard quit, crash, power loss mid-TUN). Guarded on the IPC endpoint
 	// being free so we never nuke a live core's rules.
 	if !testMode() && !coreAlreadyRunning() {
-		if err := tunmode.ReconcileOrphanedRules(appconfig.GetConfig().TunName); err != nil {
+		if unlock, held, err := acquireCleanupLock(); err != nil {
 			logger.Warnf("startup reconcile: %v", err)
+		} else if held {
+			logger.Info("startup reconcile: a --cleanup is already running; skipping")
 		} else {
-			logger.Info("startup reconcile: orphaned rules cleared")
+			if err := tunmode.ReconcileOrphanedRules(appconfig.GetConfig().TunName); err != nil {
+				logger.Warnf("startup reconcile: %v", err)
+			} else {
+				logger.Info("startup reconcile: orphaned rules cleared")
+			}
+			unlock()
 		}
 		// Reconcile removes the kill-switch table; if the user asked for it,
 		// re-arm immediately so a restart never silently exposes the machine.
@@ -406,6 +428,30 @@ func acquireInstanceLock() (bool, string, error) {
 	}
 	instanceLock = f
 	return true, dir, nil
+}
+
+// acquireCleanupLock takes a non-blocking flock on cleanup.lock in the runtime
+// dir. It returns (unlock, busy, err): busy means another cleanup (or a core's
+// startup reconcile) holds it, so the caller should do nothing. The lock lives
+// beside core.lock but is separate, because core.lock is held for the whole
+// life of a daemon and cleanup must stay possible once it is gone.
+func acquireCleanupLock() (func(), bool, error) {
+	dir := utils.RuntimeDir()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return nil, false, err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "cleanup.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		f.Close()
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil, true, nil
+		}
+		return nil, false, err
+	}
+	return func() { f.Close() }, false, nil
 }
 
 // lockHeld reports whether another process holds core.lock in dir. Stale lock
