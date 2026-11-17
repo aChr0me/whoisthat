@@ -70,6 +70,20 @@ Panel {
     return palette.disconnected
   }
 
+  function localStamp(iso) {
+    var date = new Date(String(iso || ""))
+    if (isNaN(date.getTime())) return String(iso || "")
+    return Qt.formatDateTime(date,
+      Qt.locale().timeFormat(Locale.ShortFormat) + " " + Qt.locale().dateFormat(Locale.ShortFormat))
+  }
+
+  function pingGroup() {
+    var first = root.presentation.profiles[0]
+    if (!first) return
+    root.actionRunning = true
+    runAction(["test", "group", String(first.groupId)], true)
+  }
+
   function refresh() {
     if (!stateProcess.running) {
       refreshing = true
@@ -386,27 +400,25 @@ Panel {
               width: parent.width
               spacing: Style.space(8)
 
+              // Three shrinkable parts: the two texts elide and take only what
+              // is left over once the toggle button and the gaps are
+              // reserved, so a long group line or a long profile name can
+              // never push the BROWSE button past the frame edge again. A
+              // spacer item is deliberately not used -- its width could only
+              // be another guess at what the texts will occupy.
+              readonly property real reserved: pickerToggle.width + pingButton.width + Style.space(8) * 3
+
               Text {
                 id: groupLabel
-                text: "PROFILES IN GROUP (" + root.presentation.profiles.length + ")"
+                text: root.presentation.profiles.length + " PROFILES"
                 color: root.palette.textFaint
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.letterSpacing: 1.3
+                elide: Text.ElideRight
+                width: implicitWidth
+                maximumLineCount: 1
                 anchors.verticalCenter: parent.verticalCenter
-              }
-
-              // Flexible spacer: fills exactly what's left of the row after
-              // the label, the active-profile text and the toggle button
-              // have taken their space, so the button can never be pushed
-              // past the frame's right edge and clipped away. A fixed
-              // "parent.width - 220" guess here previously under-reserved
-              // space for the active text + button, overflowing the Row by
-              // ~150-180px and silently clipping the BROWSE button off-panel.
-              Item {
-                width: Math.max(0, parent.width - groupLabel.width - activeLabel.width
-                  - pickerToggle.width - Style.space(8) * 3)
-                height: 1
               }
 
               Text {
@@ -424,9 +436,18 @@ Panel {
                 font.pixelSize: Style.font.caption
                 font.bold: true
                 elide: Text.ElideRight
-                width: Math.min(implicitWidth, Style.space(140))
+                width: Math.max(Style.space(60),
+                  parent.width - parent.reserved - groupLabel.width)
                 maximumLineCount: 1
                 anchors.verticalCenter: parent.verticalCenter
+              }
+
+              SmallButton {
+                id: pingButton
+                text: "PING"
+                enabled: !root.actionRunning
+                anchors.verticalCenter: parent.verticalCenter
+                onClicked: root.pingGroup()
               }
 
               SmallButton {
@@ -527,6 +548,21 @@ Panel {
                         elide: Text.ElideRight
                       }
 
+                      // Existing measurement from the core's own test run:
+                      // no extra network cost, and it makes a hopeless server
+                      // obvious before connecting to it.
+                      Text {
+                        width: Style.space(56)
+                        horizontalAlignment: Text.AlignRight
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: rowData.profile.testResult > 0 ? rowData.profile.testResult + " ms"
+                          : (rowData.profile.testResult === -1 ? "fail" : "—")
+                        color: rowData.profile.testResult > 0 ? root.palette.text
+                          : (rowData.profile.testResult === -1 ? root.palette.error : root.palette.textFaint)
+                        font.family: root.fontFamily
+                        font.pixelSize: Style.font.caption
+                      }
+
                       SmallButton {
                         text: "USE"
                         enabled: !root.actionRunning && !rowData.active
@@ -553,7 +589,10 @@ Panel {
           }
 
           Text {
-            text: "last poll " + root.presentation.observedAt
+            // Rendered in the system locale's short date/time format and the
+            // system time zone (a JS Date is local), so it reads like every
+            // other clock on the desktop instead of raw UTC ISO.
+            text: "last poll " + root.localStamp(root.presentation.observedAt)
             color: root.palette.textFaint
             font.family: root.fontFamily
             font.pixelSize: Style.font.caption
