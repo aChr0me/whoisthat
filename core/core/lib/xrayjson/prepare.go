@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 
+	"whoisthat-core/lib/logger"
+	"whoisthat-core/lib/netmark"
 	"whoisthat-core/structs"
 )
 
@@ -56,11 +59,17 @@ func Prepare(raw json.RawMessage, opts Options) (Prepared, error) {
 
 	outbounds = ensureServiceOutbounds(outbounds)
 	markFreedomOutbounds(outbounds)
-	if opts.TunName != "" {
-		MarkDialingOutbounds(outbounds)
-	}
+	marked := MarkDialingOutbounds(outbounds)
+	logger.Debugf("xray prepare: %d dialing outbounds marked with fwmark %d", marked, netmark.DirectMark)
 	fixDanglingDialerProxy(outbounds, proxyTags)
 	config["outbounds"] = outbounds
+	if opts.TunName != "" {
+		if _, err := net.InterfaceByName(opts.TunName); err == nil {
+			if tags := UnmarkedDialingTags(outbounds); len(tags) > 0 {
+				logger.Warnf("xray prepare: tun %s is up but outbounds are unmarked: %v", opts.TunName, tags)
+			}
+		}
+	}
 
 	config["inbounds"] = rewriteInbounds(config["inbounds"], opts)
 

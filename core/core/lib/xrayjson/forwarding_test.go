@@ -86,12 +86,12 @@ func TestTunForwardingPathExists(t *testing.T) {
 	}
 }
 
-func TestNoMarkOnProxyOutboundsWithoutTun(t *testing.T) {
+func TestMarkOnProxyOutboundsWithoutTun(t *testing.T) {
 	cfg := prepared(t, "")
 	for _, raw := range cfg["outbounds"].([]interface{}) {
 		ob := raw.(map[string]interface{})
-		if ob["protocol"] == "vless" && outboundMark(ob) != nil {
-			t.Errorf("socks-only xray has no CAP_NET_ADMIN; SO_MARK would EPERM: %+v", ob)
+		if ob["protocol"] == "vless" && outboundMark(ob) == nil {
+			t.Errorf("dialing outbound must be marked even without a tun name: %+v", ob)
 		}
 	}
 }

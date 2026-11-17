@@ -613,3 +613,40 @@ func TestStreamDetailsAreSanitized(t *testing.T) {
 		t.Fatal("credential leaked into profile details")
 	}
 }
+
+func TestPrepareMarksDialingOutboundsRegardlessOfTunName(t *testing.T) {
+	const prof = `{"outbounds":[
+	  {"tag":"proxy","protocol":"shadowsocks","settings":{"servers":[{"address":"1.1.1.1","port":443}]},
+	   "streamSettings":{"sockopt":{"tcpcongestion":"bbr","tcpKeepAliveInterval":30}}},
+	  {"tag":"direct","protocol":"freedom"},
+	  {"tag":"block","protocol":"blackhole"}]}`
+	for _, tun := range []string{"", "tun0"} {
+		prepared, err := Prepare(json.RawMessage(prof), Options{SocksPort: 3090, HttpPort: 3091, TunName: tun, APIPort: 3095})
+		if err != nil {
+			t.Fatalf("tun=%q: %v", tun, err)
+		}
+		var cfg struct {
+			Outbounds []map[string]interface{} `json:"outbounds"`
+		}
+		if err := json.Unmarshal(prepared.Config, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		for _, ob := range cfg.Outbounds {
+			stream, _ := ob["streamSettings"].(map[string]interface{})
+			sock, _ := stream["sockopt"].(map[string]interface{})
+			switch ob["tag"] {
+			case "proxy", "direct":
+				if sock["mark"] != float64(1) {
+					t.Errorf("tun=%q %v: mark = %v, want 1", tun, ob["tag"], sock["mark"])
+				}
+			case "block":
+				if sock != nil {
+					t.Errorf("tun=%q block must stay unmarked: %v", tun, sock)
+				}
+			}
+			if ob["tag"] == "proxy" && (sock["tcpcongestion"] != "bbr" || sock["tcpKeepAliveInterval"] != float64(30)) {
+				t.Errorf("tun=%q sockopt keys lost: %v", tun, sock)
+			}
+		}
+	}
+}

@@ -353,24 +353,49 @@ func markFreedomOutbounds(outbounds []interface{}) {
 // MarkDialingOutbounds stamps fwmark 1 on every outbound that opens a socket,
 // so xray's own egress takes the fwmark table (the physical gateway) and can
 // never be routed back into the TUN default route, whatever address it
-// resolves for the server. Only used with a TUN inbound: SO_MARK needs
-// CAP_NET_ADMIN, which a socks-only xray does not have.
-func MarkDialingOutbounds(outbounds []interface{}) {
+// resolves for the server. Applied unconditionally: without the fwmark rule a
+// marked socket falls through to the main table, and with it the mark is
+// required. It returns the number of outbounds marked.
+func MarkDialingOutbounds(outbounds []interface{}) int {
+	n := 0
 	for _, raw := range outbounds {
 		ob, ok := raw.(map[string]interface{})
-		if !ok {
+		if !ok || !dialsSocket(ob) {
 			continue
 		}
-		switch ob["protocol"] {
-		case "blackhole", "dns", "loopback", "wireguard":
-			continue
-		}
+		n++
 		stream := asMap(ob["streamSettings"])
 		sockopt := asMap(stream["sockopt"])
 		sockopt["mark"] = netmark.DirectMark
 		stream["sockopt"] = sockopt
 		ob["streamSettings"] = stream
 	}
+	return n
+}
+
+func dialsSocket(ob map[string]interface{}) bool {
+	switch ob["protocol"] {
+	case "blackhole", "dns", "loopback", "wireguard":
+		return false
+	}
+	return true
+}
+
+// UnmarkedDialingTags lists the tags of dialing outbounds without a sockopt mark.
+func UnmarkedDialingTags(outbounds []interface{}) []string {
+	var tags []string
+	for _, raw := range outbounds {
+		ob, ok := raw.(map[string]interface{})
+		if !ok || !dialsSocket(ob) {
+			continue
+		}
+		sockopt := asMap(asMap(ob["streamSettings"])["sockopt"])
+		if m, _ := sockopt["mark"].(int); m == 0 {
+			tag, _ := ob["tag"].(string)
+			tags = append(tags, tag)
+		}
+	}
+	return tags
 }
 
 // fixDanglingDialerProxy repairs sockopt.dialerProxy values that point to an
