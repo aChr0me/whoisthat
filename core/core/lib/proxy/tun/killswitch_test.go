@@ -504,3 +504,9 @@ func TestRemoveKillSwitchBlockRefusesWhileHalfInstalled(t *testing.T) {
 		t.Fatal("RemoveKillSwitchBlock must fail while a drop-policy chain remains")
 	}
 }
+
+// dropIsLastBatchRule reports whether the final line before the heredoc
+// terminator is the catch-all drop.
+func dropIsLastBatchRule(script string) bool {
+	return strings.Contains(script, "add rule inet whoisthat_ks output drop\nWHOISTHAT_KS_EOF\n")
+}
