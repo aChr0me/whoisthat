@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""Emit one bounded, defensively-parsed whoisthat state record.
+
+Called by Panel.qml as an external Process so the UI thread never blocks
+on the whoisthat CLI. Mirrors the hermarchy-agent state-read pattern:
+bounded subprocess calls, strict timeouts, never throws, always emits
+valid JSON (or exits non-zero so the QML side falls back).
+"""
+
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+CLI_TIMEOUT_SECONDS = 2.5
+
+WHOISTHAT_BIN = os.environ.get(
+    "WHOISTHAT_BIN",
+    os.path.join(os.path.expanduser("~"), "Projects/whoisthat/target/release/whoisthat"),
+)
+if not os.access(WHOISTHAT_BIN, os.X_OK):
+    WHOISTHAT_BIN = "whoisthat"  # fall back to PATH lookup
+
+ENV = dict(os.environ)
+ENV.setdefault(
+    "XDG_DATA_HOME",
+    os.path.join(os.path.expanduser("~"), ".hermes/cache/scratch/wt-data"),
+)
+ENV.setdefault(
+    "XDG_CONFIG_HOME",
+    os.path.join(os.path.expanduser("~"), ".hermes/cache/scratch/wt-config"),
+)
+
+
+def run_json(args):
+    """Run a whoisthat subcommand and return parsed JSON, or None on any failure."""
+    try:
+        completed = subprocess.run(
+            [WHOISTHAT_BIN] + args,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            env=ENV,
+            timeout=CLI_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    try:
+        return json.loads(completed.stdout.decode("utf-8", errors="replace"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
+def main():
+    status = run_json(["status", "-j"])
+    core_reachable = status is not None
+
+    kill_switch = None
+    if core_reachable:
+        ks = run_json(["settings", "get", "kill-switch", "-j"])
+        if isinstance(ks, dict):
+            value = ks.get("kill-switch", ks.get("value", ks.get("enabled")))
+            if isinstance(value, bool):
+                kill_switch = value
+
+    group_id = status.get("group_id") if core_reachable else None
+    profile_id = status.get("profile_id") if core_reachable else None
+
+    # Native connection-detail fields for the active profile, sourced from
+    # `profile show` (read-only). Only populated when the core reports a
+    # real group/profile pair (i.e. something has actually been connected
+    # at least once this session).
+    profile_name = ""
+    group_name = ""
+    protocol = ""
+    jitter_ms = 0
+    loss_pct = 0
+    tested = False
+    address = ""
+    port = 0
+
+    if core_reachable and isinstance(group_id, int) and isinstance(profile_id, int) and group_id > 0 and profile_id > 0:
+        detail = run_json(["profile", "show", str(profile_id), "--group", str(group_id), "-j"])
+        if isinstance(detail, dict):
+            profile_name = str(detail.get("name", ""))
+            group_name = str(detail.get("group_name", ""))
+            protocol = str(detail.get("protocol", ""))
+            jitter_ms = detail.get("jitter_ms", 0) if isinstance(detail.get("jitter_ms"), (int, float)) else 0
+            loss_pct = detail.get("loss_pct", 0) if isinstance(detail.get("loss_pct"), (int, float)) else 0
+            tested = isinstance(detail.get("test_result"), (int, float)) and detail.get("test_result", -1) >= 0
+            address = str(detail.get("address", ""))
+            port = detail.get("port", 0) if isinstance(detail.get("port"), (int, float)) else 0
+
+    # Lightweight profile/group browser list: just the profiles belonging
+    # to the currently active group (or group 1 if nothing is active yet),
+    # name + id only, for the panel's profile switcher. Cheap (<10ms even
+    # for ~50 profiles) since whoisthat-core keeps this cached locally.
+    profiles = []
+    browse_group = group_id if (isinstance(group_id, int) and group_id > 0) else None
+    if browse_group is None and core_reachable:
+        # Nothing connected yet this session: default the browser to the
+        # subscription group with the most profiles (the real one, as
+        # opposed to small placeholder/instruction groups).
+        groups = run_json(["sub", "list", "-j"])
+        if isinstance(groups, list) and groups:
+            best = max(groups, key=lambda g: g.get("profiles_count", 0) if isinstance(g, dict) else 0)
+            if isinstance(best, dict) and isinstance(best.get("id"), int):
+                browse_group = best["id"]
+    if browse_group is None:
+        browse_group = 1
+    plist = run_json(["profile", "list", "-j", "--group", str(browse_group)]) if core_reachable else None
+    if isinstance(plist, list):
+        for item in plist:
+            if isinstance(item, dict) and isinstance(item.get("id"), int):
+                profiles.append({
+                    "id": item.get("id"),
+                    "groupId": item.get("group_id", browse_group),
+                    "name": str(item.get("name", "")),
+                })
+
+    record = {
+        "schemaVersion": 2,
+        "observedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "coreReachable": bool(core_reachable),
+        "connected": bool(status.get("connected")) if core_reachable else False,
+        "status": str(status.get("status", "")) if core_reachable else "unavailable",
+        "mode": str(status.get("mode", "")) if core_reachable else "",
+        "killSwitchArmed": kill_switch,
+        "rxHuman": str(status.get("rx_speed_human", "")) if core_reachable else "",
+        "txHuman": str(status.get("tx_speed_human", "")) if core_reachable else "",
+        "groupId": group_id if isinstance(group_id, int) else 0,
+        "profileId": profile_id if isinstance(profile_id, int) else 0,
+        "profileName": profile_name,
+        "groupName": group_name,
+        "protocol": protocol,
+        "jitterMs": jitter_ms,
+        "lossPct": loss_pct,
+        "tested": bool(tested),
+        "address": address,
+        "port": port,
+        "profiles": profiles,
+    }
+
+    sys.stdout.write(json.dumps(record))
+    sys.stdout.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except Exception:
+        # Never let an unexpected error produce invalid/partial stdout.
+        print(json.dumps({
+            "schemaVersion": 2,
+            "observedAt": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "coreReachable": False,
+            "connected": False,
+            "status": "unavailable",
+            "mode": "",
+            "killSwitchArmed": None,
+            "rxHuman": "",
+            "txHuman": "",
+            "groupId": 0,
+            "profileId": 0,
+            "profileName": "",
+            "groupName": "",
+            "protocol": "",
+            "jitterMs": 0,
+            "lossPct": 0,
+            "tested": False,
+            "address": "",
+            "port": 0,
+            "profiles": [],
+        }))
+        raise SystemExit(1)

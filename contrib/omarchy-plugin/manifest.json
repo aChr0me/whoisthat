@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.achr0me.whoisthat",
+  "name": "WhoisThat",
+  "version": "1.0.0",
+  "author": "achr0me",
+  "license": "MIT",
+  "description": "Kill-switch proxy connection state indicator with a control panel for whoisthat.",
+  "kinds": ["bar-widget"],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "WhoisThat \u00b7 Kill-Switch Proxy",
+    "description": "Shows proxy connection state, mode, and kill-switch arm status; connect/disconnect and toggle from the panel.",
+    "category": "Network",
+    "aliases": ["proxy", "whoisthat", "kill-switch"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "refreshIntervalSec": 3
+    },
+    "schema": [
+      {
+        "key": "refreshIntervalSec",
+        "type": "integer",
+        "label": "Refresh interval (seconds)",
+        "min": 1,
+        "max": 60,
+        "step": 1,
+        "defaultValue": 3
+      }
+    ]
+  }
+}
