@@ -127,6 +127,10 @@ var orphanedStateTables = []struct {
 	{"inet", "whoisthat_ks"},
 }
 
+// orphanProbeRun is the command seam for DetectOrphanedState so the probe logic
+// can be tested without nft/ip or a live system.
+var orphanProbeRun = runCommandWithCaps
+
 // DetectOrphanedState reports whether any nftables table or TUN interface the
 // core creates is still present on the system, which --check-clean treats as
 // evidence of a previous core that exited without cleaning up after itself.
@@ -148,7 +152,7 @@ func DetectOrphanedState(tunName string) (found []string, err error) {
 		// Mirrors the detection pattern nftKillSwitchState already uses:
 		// CombinedOutput + LC_ALL=C so "No such file or directory" is a
 		// stable, locale-independent signal for "table absent".
-		out, cmdErr := runCommandWithCaps("nft", "list", "table", t.family, t.name)
+		out, cmdErr := orphanProbeRun("nft", "list", "table", t.family, t.name)
 		if cmdErr == nil {
 			found = append(found, fmt.Sprintf("nft table %s %s", t.family, t.name))
 			continue
@@ -157,7 +161,7 @@ func DetectOrphanedState(tunName string) (found []string, err error) {
 			return found, fmt.Errorf("cannot inspect nft table %s %s: %w: %s", t.family, t.name, cmdErr, strings.TrimSpace(out))
 		}
 	}
-	if _, cmdErr := runCommandWithCaps("ip", "link", "show", tunName); cmdErr == nil {
+	if _, cmdErr := orphanProbeRun("ip", "link", "show", tunName); cmdErr == nil {
 		found = append(found, fmt.Sprintf("interface %s", tunName))
 	}
 	return found, nil
