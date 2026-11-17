@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	appconfig "whoisthat-core/lib/AppConfig"
 	"whoisthat-core/structs"
@@ -259,4 +260,23 @@ func TestRefreshKillSwitchSkipsWhenDisarmedOrEmpty(t *testing.T) {
 	if st2.setupCalls != 0 {
 		t.Fatalf("empty ips: setup calls = %d, want 0", st2.setupCalls)
 	}
+}
+
+// connect and disarm hold ConnectionMutex while routing reloads; a refresh that
+// blocked on it deadlocked the whole core.
+func TestRefreshKillSwitchDoesNotBlockOnHeldMutex(t *testing.T) {
+	resetKillSwitchConfig(t)
+	stubKillSwitch(t, nil, nil, true)
+	appconfig.SetKillSwitch(true)
+	cmd, _ := newKillSwitchCmd()
+
+	ConnectionMutex.Lock()
+	done := make(chan struct{})
+	go func() { cmd.refreshKillSwitch(fakeKSProxy{ips: []string{"203.0.113.9"}}); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("refresh blocked on a held ConnectionMutex")
+	}
+	ConnectionMutex.Unlock()
 }

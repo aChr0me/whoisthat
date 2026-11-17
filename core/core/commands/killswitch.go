@@ -118,7 +118,12 @@ func (cmd *Cmd) refreshKillSwitch(proxy_manager killSwitchProxy) {
 		return
 	}
 	cfg := appconfig.GetConfig()
-	ConnectionMutex.Lock()
+	// Callers such as connect and disarm already hold the mutex (it is not
+	// reentrant), so a refresh must not block on it: skipping is safe, the next
+	// arm re-resolves anyway.
+	if !ConnectionMutex.TryLock() {
+		return
+	}
 	defer ConnectionMutex.Unlock()
 	if err := setupKillSwitchBlock(ips, cfg.TunName, cfg.DnsServers); err != nil {
 		logger.Warn("kill-switch: refresh after routing change failed:", err)
