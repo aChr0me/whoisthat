@@ -49,6 +49,10 @@ pub(super) fn check_capabilities() -> CheckCategory {
         ));
     }
 
+    // 1b. managed xray runtime: its TUN inbound needs cap_net_admin on the
+    // file, and every runtime download replaces the file and wipes it.
+    items.push(check_xray_runtime_caps());
+
     // 2. /dev/net/tun
     let tun_dev = Path::new("/dev/net/tun");
     if tun_dev.exists() {
@@ -278,5 +282,59 @@ fn check_native_cgroup(
             ),
             Some(setup_hint.to_string()),
         ));
+    }
+}
+
+fn xray_runtime_has_net_admin(getcap_output: &str) -> bool {
+    getcap_output.contains("cap_net_admin")
+}
+
+fn check_xray_runtime_caps() -> CheckItem {
+    let runtimes = crate::config::data_dir().join("runtimes").join("xray");
+    let bin = fs::read_dir(&runtimes)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|d| {
+            d.file_name()
+                .is_some_and(|n| n.to_string_lossy().contains(super::PINNED_XRAY_VERSION))
+        })
+        .map(|d| d.join("xray"))
+        .find(|b| b.exists());
+    let Some(bin) = bin else {
+        return CheckItem::pass(
+            "xray runtime caps",
+            "no managed xray runtime yet (checked again after download)",
+        );
+    };
+    let out = Command::new("getcap")
+        .arg(&bin)
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+        .unwrap_or_default();
+    if xray_runtime_has_net_admin(&out) {
+        CheckItem::pass("xray runtime caps", format!("{} has cap_net_admin", bin.display()))
+    } else {
+        CheckItem::fail(
+            "xray runtime caps",
+            format!(
+                "{} lacks cap_net_admin: TUN start fails with 'operation not permitted' (a runtime download wipes file capabilities)",
+                bin.display()
+            ),
+            Some(format!("sudo setcap cap_net_admin,cap_net_raw=+ep {}", bin.display())),
+        )
+    }
+}
+
+#[cfg(test)]
+mod xray_caps_tests {
+    use super::xray_runtime_has_net_admin;
+
+    #[test]
+    fn detects_missing_and_present() {
+        assert!(xray_runtime_has_net_admin("/x/xray cap_net_admin,cap_net_raw=ep"));
+        assert!(!xray_runtime_has_net_admin(""));
+        assert!(!xray_runtime_has_net_admin("/x/xray cap_net_raw=ep"));
     }
 }

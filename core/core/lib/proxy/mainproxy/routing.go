@@ -368,6 +368,12 @@ func (p *ProxyManager) reloadCoreLocked(tunName string) error {
 		}
 	}
 
+	if p.tunEnabled {
+		if err := requireTunCaps(); err != nil {
+			return err
+		}
+	}
+
 	// Retire the active exit-watcher so it doesn't fire on intentional Stop()
 	p.retireExitWatcher()
 

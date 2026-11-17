@@ -218,6 +218,9 @@ func (x *XrayCore) Start(stdinPipe []byte, assetDir string) error {
 				if tail := crashTail(name, 16384); tail != "" {
 					// One line keeps the level tag/parse target intact.
 					logger.Errorf("xray output: %s", strings.ReplaceAll(tail, "\n", " | "))
+					if strings.Contains(tail, "operation not permitted") && !xraymgr.HasTunCaps(xraybin) {
+						logger.Errorf("xray: EPERM and %s lacks cap_net_admin (a runtime download wipes file caps). Fix: sudo setcap cap_net_admin,cap_net_raw=+ep %s", xraybin, xraybin)
+					}
 				}
 			}
 			_ = os.Remove(name)

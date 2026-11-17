@@ -412,6 +412,12 @@ func (p *ProxyManager) Connect(profile structs.Profile, tunName string, tunEnabl
 		return err
 	}
 
+	if tunEnabled {
+		if err := requireTunCaps(); err != nil {
+			return err
+		}
+	}
+
 	p.core = newCore()
 	if err := p.core.Start(xray_config, selection.GeoDir); err != nil {
 		return err
