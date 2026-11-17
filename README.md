@@ -49,6 +49,16 @@
 - **Real-Time Traffic Monitoring**: Unicode Braille bandwidth monitor (RX/TX), dynamic scaling, and interface health metrics.
 - **Desktop & Ecosystem Integration**: 1-click browser imports (`wit://`), official GNOME Shell extension, and continuous NDJSON streaming for Waybar and Polybar.
 
+### IPv6 while the switch is armed
+
+IPv6 is blocked entirely while the kill-switch is armed rather than tunnelled.
+There is no v6 route into the TUN, so anything leaving over v6 would bypass the
+tunnel; blocking keeps the guarantee absolute. Clients that retry an AAAA answer
+over v4 (Happy Eyeballs, most browsers and `curl`) are unaffected, and a
+v6-only destination is expected to fail while armed. Destinations excluded by a
+direct rule get a v6 host route to the physical gateway like their v4
+counterparts, so they keep working.
+
 ---
 
 ## Quick Installation
