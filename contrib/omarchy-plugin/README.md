@@ -15,16 +15,19 @@ Plugin id: `io.github.achr0me.whoisthat`
 | no | unarmed (known) | red |
 | no | unknown / core offline | grey |
 
-## Install (manual copy — not yet published to a marketplace/repo)
-
-This plugin isn't published anywhere yet, so there's no `omarchy plugin add`
-git URL. Install by copying the folder straight into your plugins directory:
+## Install (from this repo)
 
 ```sh
-cp -r io.github.achr0me.whoisthat ~/.config/omarchy/plugins/
-omarchy-shell shell rescanPlugins   # or restart the shell
+contrib/omarchy-plugin/install.sh        # symlink into ~/.config/omarchy/plugins
 omarchy plugin list --json | grep achr0me   # confirm discovery
+contrib/omarchy-plugin/install.sh --uninstall
 ```
+
+The script links `contrib/omarchy-plugin` to
+`~/.config/omarchy/plugins/io.github.achr0me.whoisthat` (honouring
+`XDG_CONFIG_HOME`), so repo edits are live after a shell rescan. It refuses to
+replace a real directory left by an older copy install. Note that `pinned.json`
+is written inside the plugin directory, i.e. into the repo checkout.
 
 Then enable it from the bar settings (or `omarchy plugin enable
 io.github.achr0me.whoisthat right`) if it isn't auto-placed.
@@ -49,9 +52,11 @@ io.github.achr0me.whoisthat right`) if it isn't auto-placed.
   (default 3, configurable in widget settings).
 - Three buttons are **click-only**, never auto-triggered by polling:
   - **Connect / Disconnect** — runs `whoisthat connect <profile> --wait` or
-    `whoisthat disconnect --wait`. The profile defaults to the
-    `defaultProfile` widget setting (`default:default`); change it in the
-    widget config if your real group:profile differs.
+    `whoisthat disconnect --wait`. The profile is the
+    `defaultProfile` widget setting (`group:profile`) when set, otherwise the
+    browsed or active profile, otherwise the first loaded one. Until the
+    subscription list has loaded the button reads "NO PROFILES LOADED" and is
+    disabled.
   - **Switch mode** — toggles `whoisthat mode proxy|tun`.
   - **Arm/Disarm kill-switch** — runs `whoisthat settings set
     kill-switch=true|false`.
